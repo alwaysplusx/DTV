@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+use tauri::Manager;
 mod platforms;
 mod proxy;
 use platforms::common::{DouyinDanmakuState, FollowHttpClient, HuyaDanmakuState};

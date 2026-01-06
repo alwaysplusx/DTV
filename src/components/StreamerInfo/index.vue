@@ -67,8 +67,8 @@
   <style scoped>
 .streamer-info {
   width: 100%;
-  max-width: 980px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding: 28px 34px 26px;
   box-sizing: border-box;
   position: relative;
