@@ -28,7 +28,7 @@
           @fullscreen-change="handleFullscreenChange"
         >
           <transition name="fade" mode="out-in">
-            <keep-alive :include="['HomeView', 'DouyinHomeView', 'HuyaHomeView', 'BilibiliHomeView']">
+            <keep-alive :include="['DouyuHomeView', 'DouyinHomeView', 'HuyaHomeView', 'BilibiliHomeView']">
               <component :is="Component" :key="route.path" />
             </keep-alive>
           </transition>
@@ -199,7 +199,7 @@ const handleFullscreenChange = (isFullscreen: boolean) => {
   flex-direction: column;
   min-width: 0;
   background-color: var(--bg-primary);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: none;
 }
 
 .app-body {

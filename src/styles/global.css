@@ -149,17 +149,17 @@ body {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  transition: none;
 }
 
 .fade-enter-from {
-  opacity: 0;
-  transform: translateY(6px);
+  opacity: 1;
+  transform: none;
 }
 
 .fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
+  opacity: 1;
+  transform: none;
 }
 
 button {

@@ -14,6 +14,10 @@ const HEARTBEAT: &'static [u8] = b"\x00\x03\x1d\x00\x00\x69\x00\x00\x00\x69\x10\
 const HEARTBEAT_BASE64: &str = "ABQdAAwsNgBM"; // same as Python
 
 // Minimal JCE/TARS codec for required Huya structures
+enum ConnectionOutcome {
+    Stop,
+    Disconnected,
+}
 
 async fn fetch_huya_ids(room_id: &str) -> Result<(i64, i64), String> {
     let url = format!(
@@ -136,151 +140,139 @@ pub async fn start_huya_danmaku_listener(
             "[Huya Danmaku] spawned worker for room_id={}",
             room_id_clone
         );
-        // 1) 获取 ws 与注册数据（与根目录 huya.rs 同步）
-        let (ws_url, reg_data) = match get_ws_info_tars(&room_id_clone).await {
-            Ok(v) => v,
-            Err(e) => {
-                let _ = app_handle_clone.emit(
-                    "danmaku-message",
-                    crate::platforms::common::DanmakuFrontendPayload {
-                        room_id: room_id_clone.clone(),
-                        user: "系统".to_string(),
-                        content: format!("Huya房间信息获取失败: {}", e),
-                        user_level: 0,
-                        fans_club_level: 0,
-                    },
+
+        let mut backoff_secs = 1u64;
+
+        loop {
+            let result: anyhow::Result<ConnectionOutcome> = async {
+                let (ws_url, reg_data) = get_ws_info_tars(&room_id_clone)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                println!(
+                    "[Huya Danmaku] ws_url={} reg_len={}",
+                    ws_url,
+                    reg_data.len()
                 );
-                return;
-            }
-        };
-
-        println!(
-            "[Huya Danmaku] ws_url={} reg_len={}",
-            ws_url,
-            reg_data.len()
-        );
-        info!(
-            "[Huya Danmaku] ws_url={} reg_len={}",
-            ws_url,
-            reg_data.len()
-        );
-
-        // 2) 连接 WebSocket
-        println!("[Huya Danmaku] connecting to {}", ws_url);
-        info!("[Huya Danmaku] connecting to {}", ws_url);
-        let (ws_stream, _) = match connect_async(&ws_url).await {
-            Ok(v) => v,
-            Err(e) => {
-                let _ = app_handle_clone.emit(
-                    "danmaku-message",
-                    crate::platforms::common::DanmakuFrontendPayload {
-                        room_id: room_id_clone.clone(),
-                        user: "系统".to_string(),
-                        content: format!("Huya弹幕连接失败: {}", e),
-                        user_level: 0,
-                        fans_club_level: 0,
-                    },
+                info!(
+                    "[Huya Danmaku] ws_url={} reg_len={}",
+                    ws_url,
+                    reg_data.len()
                 );
-                return;
-            }
-        };
 
-        let (mut ws_write, mut ws_read) = ws_stream.split();
-        if let Err(e) = ws_write.send(WsMessage::Binary(reg_data)).await {
-            let _ = app_handle_clone.emit(
-                "danmaku-message",
-                crate::platforms::common::DanmakuFrontendPayload {
-                    room_id: room_id_clone.clone(),
-                    user: "系统".to_string(),
-                    content: format!("Huya注册数据发送失败: {}", e),
-                    user_level: 0,
-                    fans_club_level: 0,
-                },
-            );
-            return;
-        }
+                println!("[Huya Danmaku] connecting to {}", ws_url);
+                info!("[Huya Danmaku] connecting to {}", ws_url);
+                let (ws_stream, _) = connect_async(&ws_url).await?;
 
-        // 3) 心跳与接收
-        let hb_task = async {
-            let mut hb_seq = 0usize;
-            while let Ok(_) = ws_write.send(WsMessage::Binary(HEARTBEAT.into())).await {
-                hb_seq += 1;
-                println!("[Huya Danmaku] heartbeat sent #{}", hb_seq);
-                info!("[Huya Danmaku] heartbeat sent #{}", hb_seq);
-                sleep(Duration::from_secs(20)).await;
-            }
-            Err::<(), anyhow::Error>(anyhow::anyhow!("Huya心跳发送失败"))
-        };
+                let (mut ws_write, mut ws_read) = ws_stream.split();
+                ws_write.send(WsMessage::Binary(reg_data)).await?;
 
-        let recv_task = async {
-            while let Some(m) = ws_read.next().await {
-                let m = match m {
-                    Ok(x) => x,
-                    Err(e) => return Err(anyhow::anyhow!(e)),
+                let hb_task = async {
+                    let mut hb_seq = 0usize;
+                    while let Ok(_) = ws_write.send(WsMessage::Binary(HEARTBEAT.into())).await {
+                        hb_seq += 1;
+                        println!("[Huya Danmaku] heartbeat sent #{}", hb_seq);
+                        info!("[Huya Danmaku] heartbeat sent #{}", hb_seq);
+                        sleep(Duration::from_secs(20)).await;
+                    }
+                    Err::<(), anyhow::Error>(anyhow::anyhow!("Huya heartbeat send failed"))
                 };
-                match m {
-                    WsMessage::Binary(bin) => {
-                        let (top_cmd, nested_cmd) = peek_cmds(&bin);
-                        println!(
-                            "[Huya Danmaku] WS msg: len={} top_cmd={:?} nested_cmd={:?}",
-                            bin.len(),
-                            top_cmd,
-                            nested_cmd
-                        );
-                        info!(
-                            "[Huya Danmaku] WS msg: len={} top_cmd={:?} nested_cmd={:?}",
-                            bin.len(),
-                            top_cmd,
-                            nested_cmd
-                        );
-                        match decode_msg_tars(&bin)? {
-                            Some((nick, text)) => {
-                                println!("[Huya Danmaku] decoded chat: {} -> {}", nick, text);
-                                info!("[Huya Danmaku] decoded chat: {} -> {}", nick, text);
-                                let _ = app_handle_clone.emit(
-                                    "danmaku-message",
-                                    crate::platforms::common::DanmakuFrontendPayload {
-                                        room_id: room_id_clone.clone(),
-                                        user: nick,
-                                        content: text,
-                                        user_level: 0,
-                                        fans_club_level: 0,
-                                    },
+
+                let recv_task = async {
+                    while let Some(m) = ws_read.next().await {
+                        let m = match m {
+                            Ok(x) => x,
+                            Err(e) => return Err(anyhow::anyhow!(e)),
+                        };
+                        match m {
+                            WsMessage::Binary(bin) => {
+                                let (top_cmd, nested_cmd) = peek_cmds(&bin);
+                                println!(
+                                    "[Huya Danmaku] WS msg: len={} top_cmd={:?} nested_cmd={:?}",
+                                    bin.len(),
+                                    top_cmd,
+                                    nested_cmd
                                 );
-                            }
-                            None => {
-                                if top_cmd == Some(7) {
-                                    println!(
-                                        "[Huya Danmaku] non-chat or empty msg, nested={:?}",
-                                        nested_cmd
-                                    );
-                                    info!(
-                                        "[Huya Danmaku] non-chat or empty msg, nested={:?}",
-                                        nested_cmd
-                                    );
+                                info!(
+                                    "[Huya Danmaku] WS msg: len={} top_cmd={:?} nested_cmd={:?}",
+                                    bin.len(),
+                                    top_cmd,
+                                    nested_cmd
+                                );
+                                match decode_msg_tars(&bin)? {
+                                    Some((nick, text)) => {
+                                        println!("[Huya Danmaku] decoded chat: {} -> {}", nick, text);
+                                        info!("[Huya Danmaku] decoded chat: {} -> {}", nick, text);
+                                        let _ = app_handle_clone.emit(
+                                            "danmaku-message",
+                                            crate::platforms::common::DanmakuFrontendPayload {
+                                                room_id: room_id_clone.clone(),
+                                                user: nick,
+                                                content: text,
+                                                user_level: 0,
+                                                fans_club_level: 0,
+                                            },
+                                        );
+                                    }
+                                    None => {
+                                        if top_cmd == Some(7) {
+                                            println!(
+                                                "[Huya Danmaku] non-chat or empty msg, nested={:?}",
+                                                nested_cmd
+                                            );
+                                            info!(
+                                                "[Huya Danmaku] non-chat or empty msg, nested={:?}",
+                                                nested_cmd
+                                            );
+                                        }
+                                    }
                                 }
+                            }
+                            other => {
+                                println!("[Huya Danmaku] non-binary ws message: {:?}", other);
+                                info!("[Huya Danmaku] non-binary ws message: {:?}", other);
                             }
                         }
                     }
-                    other => {
-                        println!("[Huya Danmaku] non-binary ws message: {:?}", other);
-                        info!("[Huya Danmaku] non-binary ws message: {:?}", other);
+                    anyhow::Ok(())
+                };
+
+                tokio::select! {
+                    _ = rx_shutdown.recv() => Ok(ConnectionOutcome::Stop),
+                    it = hb_task => {
+                        if let Err(e) = it { eprintln!("[Huya Danmaku] {}", e); }
+                        Ok(ConnectionOutcome::Disconnected)
+                    }
+                    it = recv_task => {
+                        if let Err(e) = it { eprintln!("[Huya Danmaku] recv error: {}", e); }
+                        Ok(ConnectionOutcome::Disconnected)
                     }
                 }
             }
-            anyhow::Ok(())
-        };
+            .await;
 
-        tokio::select! {
-            _ = rx_shutdown.recv() => {
-                // 主动关闭
+            match result {
+                Ok(ConnectionOutcome::Stop) => break,
+                Ok(ConnectionOutcome::Disconnected) => {
+                    eprintln!(
+                        "[Huya Danmaku] Disconnected, retrying in {}s.",
+                        backoff_secs
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[Huya Danmaku] Connection error: {}. Retrying in {}s.",
+                        e, backoff_secs
+                    );
+                }
             }
-            it = hb_task => {
-                if let Err(e) = it { eprintln!("[Huya Danmaku] {}", e); }
+
+            let sleep_fut = sleep(Duration::from_secs(backoff_secs));
+            tokio::select! {
+                _ = sleep_fut => {}
+                _ = rx_shutdown.recv() => break,
             }
-            it = recv_task => {
-                if let Err(e) = it { eprintln!("[Huya Danmaku] 接收失败: {}", e); }
-            }
+            backoff_secs = (backoff_secs * 2).min(30);
         }
     });
 
@@ -586,3 +578,4 @@ fn decode_msg_tars(data: &[u8]) -> anyhow::Result<Option<(String, String)>> {
     }
     Ok(ret)
 }
+

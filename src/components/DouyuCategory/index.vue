@@ -141,6 +141,9 @@ const handleCate2SelectAndCollapse = (cate2: Category2) => {
 // 监听isExpanded变化
 watch(isExpanded, (newVal) => {
   emit('expanded-state-changed', newVal)
+  nextTick(() => {
+    emit('category-section-height-settled')
+  })
 })
 
 // 设置动画事件监听器 - 在组件挂载时添加
@@ -177,7 +180,6 @@ onMounted(() => {
     window.removeEventListener('category-collapsed', handleCollapsed)
   })
 
-  categoryListRootRef.value?.addEventListener('transitionend', onCategoryListTransitionEnd)
   loadCategories()
 
   // 如果一段时间后仍未选择分类，强制选择第一个
@@ -199,10 +201,6 @@ onMounted(() => {
       console.error('加载分类超时')
     }
   }, 5000)
-})
-
-onBeforeUnmount(() => {
-  categoryListRootRef.value?.removeEventListener('transitionend', onCategoryListTransitionEnd)
 })
 
 // 监听分类数据变化
@@ -269,10 +267,6 @@ watch(selectedCate2Id, (newVal) => {
   }
 })
 
-const onCategoryListTransitionEnd = () => {
-  emit('category-section-height-settled')
-}
-
 // 导出一些方法供父组件使用
 defineExpose({
   cate1List,
@@ -299,7 +293,7 @@ defineExpose({
   max-height: 280px;
   min-height: 200px;
   overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.33, 0.66, 0.66, 1);
+  transition: none;
   will-change: max-height;
   transform: translateZ(0);
   width: 100%;
@@ -325,17 +319,13 @@ defineExpose({
   border: 3px solid var(--border-color);
   border-top-color: var(--accent-color);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: none;
   margin-bottom: 15px;
 }
 
 .loading-text {
   font-size: 14px;
   color: var(--secondary-text);
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .error-state {
@@ -371,11 +361,6 @@ defineExpose({
 }
 
 .cate2-content {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.cate2-content.animating {
-  overflow: hidden;
-  will-change: transform, height;
+  transition: none;
 }
 </style>

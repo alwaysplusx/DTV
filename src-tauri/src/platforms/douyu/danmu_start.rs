@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tauri::{Emitter, Window};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio::time::Duration;
+use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::Message};
 use url::Url;
@@ -12,6 +12,11 @@ pub struct DanmakuClient {
     room_id: String,
     window: Window,
     stop_signal_rx: oneshot::Receiver<()>,
+}
+
+enum ConnectionOutcome {
+    Stop,
+    Disconnected,
 }
 
 impl DanmakuClient {
@@ -39,7 +44,10 @@ impl DanmakuClient {
         result
     }
 
-    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_connection(
+        &self,
+        stop_rx: &mut oneshot::Receiver<()>,
+    ) -> Result<ConnectionOutcome, Box<dyn std::error::Error>> {
         let url = Url::parse("wss://danmuproxy.douyu.com:8506/")?;
         let mut request = url.into_client_request()?;
         request
@@ -77,10 +85,6 @@ impl DanmakuClient {
             }
         });
 
-        // Keep a reference to self.stop_signal_rx to move into tasks
-        // We need to select between receiving a message from the websocket and the stop signal
-        let mut stop_rx = std::mem::replace(&mut self.stop_signal_rx, oneshot::channel().1);
-
         // Message sending task
         let send_task = tokio::spawn(async move {
             while let Some(msg_to_send) = rx.recv().await {
@@ -96,9 +100,10 @@ impl DanmakuClient {
         // Processing incoming messages
         loop {
             tokio::select! {
-                _ = &mut stop_rx => {
+                _ = &mut *stop_rx => {
                     eprintln!("[Douyu Danmaku {}] Stop signal received, terminating listener.", room_id_clone);
-                    break;
+                    send_task.abort();
+                    return Ok(ConnectionOutcome::Stop);
                 }
                 msg_option = read.next() => {
                     match msg_option {
@@ -179,15 +184,45 @@ impl DanmakuClient {
                         }
                         Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
                             eprintln!("[Douyu Danmaku {}] Websocket closed or error, terminating listener.", room_id_clone);
-                            break;
+                            send_task.abort();
+                            return Ok(ConnectionOutcome::Disconnected);
                         }
                         _ => {}
                     }
                 }
             }
         }
-        send_task.abort();
-        eprintln!("[Douyu Danmaku {}] Listener stopped.", room_id_clone);
+    }
+
+    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut stop_rx = std::mem::replace(&mut self.stop_signal_rx, oneshot::channel().1);
+        let mut backoff_secs = 1u64;
+
+        loop {
+            let outcome = self.run_connection(&mut stop_rx).await?;
+            match outcome {
+                ConnectionOutcome::Stop => {
+                    eprintln!("[Douyu Danmaku {}] Listener stopped.", self.room_id);
+                    break;
+                }
+                ConnectionOutcome::Disconnected => {
+                    eprintln!(
+                        "[Douyu Danmaku {}] Disconnected, retrying in {}s.",
+                        self.room_id, backoff_secs
+                    );
+                    let sleep_fut = sleep(Duration::from_secs(backoff_secs));
+                    tokio::select! {
+                        _ = sleep_fut => {}
+                        _ = &mut stop_rx => {
+                            eprintln!("[Douyu Danmaku {}] Stop signal received during backoff.", self.room_id);
+                            break;
+                        }
+                    }
+                    backoff_secs = (backoff_secs * 2).min(30);
+                    continue;
+                }
+            }
+        }
         Ok(())
     }
 }

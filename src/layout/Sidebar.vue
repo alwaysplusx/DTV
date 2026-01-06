@@ -7,7 +7,7 @@
       display: 'flex',
       flexDirection: 'column',
       borderRight: '1px solid var(--border)',
-      transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      transition: 'none',
     }"
   >
     <div v-show="!isCollapsed" class="sidebar-body">

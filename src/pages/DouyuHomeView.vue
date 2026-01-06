@@ -33,7 +33,7 @@ import { ref, onMounted } from 'vue'
 
 // Added for KeepAlive include by name
 defineOptions({
-  name: 'HomeView'
+  name: 'DouyuHomeView'
 })
 
 import CategoryList from '../components/DouyuCategory/index.vue';

@@ -141,7 +141,7 @@ const handleCate2GridHeightChanged = () => {
   max-height: 280px;
   min-height: 160px;
   overflow: hidden;
-  transition: max-height 0.3s ease;
+  transition: none;
   will-change: max-height;
   transform: translateZ(0);
   width: 100%;
@@ -169,7 +169,7 @@ const handleCate2GridHeightChanged = () => {
   border: 2px solid var(--border-color);
   border-top-color: var(--accent-color);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: none;
   margin-bottom: 12px;
 }
 
@@ -179,7 +179,4 @@ const handleCate2GridHeightChanged = () => {
   color: var(--secondary-text);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 </style>
