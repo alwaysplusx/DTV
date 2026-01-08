@@ -1,6 +1,6 @@
 <template>
   <div class="player-page" :class="{ 'web-fs': isInWebFullscreen || isInNativePlayerFullscreen }">
-    <button v-if="!isInWebFullscreen" @click="$emit('close-player')" class="player-close-btn" title="关闭播放器">
+    <button v-if="!isInWebFullscreen" @click="handleClosePlayerClick" class="player-close-btn" title="关闭播放器">
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -85,7 +85,7 @@
       </div>
 
       <DanmuList 
-        v-if="roomId && !isLoadingStream && !streamError" 
+        v-if="roomId && !isLoadingStream && !streamError && showDanmuPanel" 
         :room-id="props.roomId"
         :messages="danmakuMessages"
         v-show="!isFullScreen" 
@@ -158,6 +158,14 @@ const emit = defineEmits<{
   (e: 'request-refresh-details'): void;
   (e: 'request-player-reload'): void;
 }>();
+
+const isClosing = ref(false);
+const MIN_DANMU_WIDTH = 1100;
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0);
+const updateWindowWidth = () => {
+  windowWidth.value = typeof window !== 'undefined' ? window.innerWidth : 0;
+};
+const showDanmuPanel = computed(() => windowWidth.value >= MIN_DANMU_WIDTH);
 
 const playerContainerRef = ref<HTMLDivElement | null>(null);
 const playerInstance = shallowRef<Player | null>(null);
@@ -248,6 +256,9 @@ function resetFullscreenState() {
 }
 
 function updateFullscreenFlag() {
+  if (isClosing.value) {
+    return;
+  }
   isFullScreen.value = isInNativePlayerFullscreen.value || isInWebFullscreen.value;
   emit('fullscreen-change', isFullScreen.value);
 }
@@ -560,7 +571,9 @@ async function mountXgPlayer(
   player.on('exitFullscreenWeb', () => {
     isInWebFullscreen.value = false;
     try {
-      document.documentElement.classList.remove('web-fs-active');
+      if (!isClosing.value) {
+        document.documentElement.classList.remove('web-fs-active');
+      }
     } catch (error) {
       console.warn('[Player] Failed to clear web fullscreen flag:', error);
     }
@@ -576,7 +589,7 @@ async function mountXgPlayer(
     try {
       if (isCssFullscreen) {
         document.documentElement.classList.add('web-fs-active');
-      } else {
+      } else if (!isClosing.value) {
         document.documentElement.classList.remove('web-fs-active');
       }
     } catch (error) {
@@ -591,6 +604,11 @@ async function mountXgPlayer(
     arrangeControlClusters(player);
     updateFullscreenFlag();
   });
+}
+
+function handleClosePlayerClick() {
+  isClosing.value = true;
+  emit('close-player');
 }
 
 
@@ -904,6 +922,10 @@ registerPlayerWatchers({
 });
 
 onMounted(async () => {
+  updateWindowWidth();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', updateWindowWidth, { passive: true });
+  }
   // 初始化画质偏好
   initializeQualityPreference();
   
@@ -924,6 +946,9 @@ onMounted(async () => {
 });
 
 onUnmounted(async () => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', updateWindowWidth);
+  }
   const platformToStop: StreamingPlatform = props.platform;
   const roomIdToStop: string | null = props.roomId;
   await stopCurrentDanmakuListener(platformToStop, roomIdToStop);

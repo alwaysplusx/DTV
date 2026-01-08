@@ -287,10 +287,10 @@ const currentPlatform = computed<Platform>(() => {
 });
 
 const placeholderText = computed(() => {
-  if (currentPlatform.value === Platform.DOUYU) return '搜索斗鱼主播/房间';
-  if (currentPlatform.value === Platform.HUYA) return '搜索虎牙主播/房间';
-  if (currentPlatform.value === Platform.DOUYIN) return '搜索抖音用户/房间';
-  if (currentPlatform.value === Platform.BILIBILI) return '搜索B站主播/房间';
+  if (currentPlatform.value === Platform.DOUYU) return '搜索斗鱼主播名称/房间号';
+  if (currentPlatform.value === Platform.HUYA) return '搜索虎牙主播名称/房间号';
+  if (currentPlatform.value === Platform.DOUYIN) return '搜索抖音房间号';
+  if (currentPlatform.value === Platform.BILIBILI) return '搜索B站主播名称/房间号';
   return '搜索主播/房间';
 });
 

@@ -19,10 +19,12 @@ async fn connect_and_process_websocket(
     cookie_header: &str,
     user_unique_id: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (read_stream, ack_tx) = 
+    let (read_stream, ack_tx, shutdown_tx) =
         websocket_connection::connect_and_manage_websocket(fetcher, room_id, cookie_header, user_unique_id).await?;
 
-    message_handler::handle_received_messages(read_stream, ack_tx).await?;
+    let result = message_handler::handle_received_messages(read_stream, ack_tx).await;
+    let _ = shutdown_tx.send(true);
+    result?;
 
     Ok(())
 }

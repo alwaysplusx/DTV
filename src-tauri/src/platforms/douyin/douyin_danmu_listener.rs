@@ -73,7 +73,7 @@ pub async fn start_douyin_danmu_listener(
                     actual_room_id, user_unique_id
                 );
 
-                let (read_stream, ack_tx) = crate::platforms::douyin::danmu::websocket_connection::connect_and_manage_websocket(
+                let (read_stream, ack_tx, shutdown_tx) = crate::platforms::douyin::danmu::websocket_connection::connect_and_manage_websocket(
                     &fetcher,
                     &actual_room_id,
                     &cookie_header,
@@ -86,6 +86,7 @@ pub async fn start_douyin_danmu_listener(
                     actual_room_id
                 );
 
+                let shutdown_tx_for_msg = shutdown_tx.clone();
                 tokio::select! {
                     res = crate::platforms::douyin::danmu::message_handler::handle_received_messages(
                         read_stream,
@@ -93,6 +94,7 @@ pub async fn start_douyin_danmu_listener(
                         app_handle_clone.clone(),
                         actual_room_id.clone()
                     ) => {
+                        let _ = shutdown_tx_for_msg.send(true);
                         if let Err(e) = res {
                             return Err(e);
                         }
@@ -103,6 +105,7 @@ pub async fn start_douyin_danmu_listener(
                             "[Douyin Danmaku] Received shutdown signal for room {}.",
                             actual_room_id
                         );
+                        let _ = shutdown_tx.send(true);
                         Ok(ConnectionOutcome::Stop)
                     }
                 }

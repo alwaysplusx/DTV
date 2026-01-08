@@ -4,10 +4,14 @@ use crate::platforms::common::GetStreamUrlPayload;
 use crate::platforms::common::LiveStreamInfo as CommonLiveStreamInfo;
 use crate::platforms::douyin::web_api::{
     choose_flv_stream, fetch_room_data, normalize_douyin_live_id, DouyinRoomData,
+    DEFAULT_USER_AGENT,
 };
 use crate::proxy::ProxyServerHandle;
 use crate::StreamUrlStore;
+use regex::Regex;
+use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde_json::Value;
+use std::path::PathBuf;
 use tauri::{command, AppHandle, State};
 
 const QUALITY_OD: &str = "OD";
@@ -63,7 +67,23 @@ pub async fn get_douyin_live_stream_url_with_quality(
         .map_err(|e| format!("Failed to create direct connection HttpClient: {}", e))?;
 
     let normalized_id = normalize_douyin_live_id(&requested_id);
-    let DouyinRoomData { room } = fetch_room_data(&http_client, &normalized_id, None).await?;
+    let DouyinRoomData { mut room } = fetch_room_data(&http_client, &normalized_id, None).await?;
+    let origin_from_html =
+        match fetch_and_save_douyin_live_page_snapshot(&http_client, &normalized_id).await {
+            Ok(origin) => {
+                if let Some(url) = origin.as_deref() {
+                    insert_origin_flv(&mut room, url);
+                }
+                origin
+            }
+            Err(err) => {
+                println!(
+                    "[Douyin Stream Detail] Failed to save live page snapshot: {}",
+                    err
+                );
+                None
+            }
+        };
     let web_rid = extract_web_rid(&room).unwrap_or_else(|| normalized_id.clone());
     let status = room
         .get("status")
@@ -97,7 +117,8 @@ pub async fn get_douyin_live_stream_url_with_quality(
     }
 
     let target_quality = normalize_quality_tag(&quality);
-    let selected = choose_flv_stream(&room, target_quality)
+    let selected = pick_douyin_flv_by_quality(&room, target_quality, origin_from_html.as_deref())
+        .or_else(|| choose_flv_stream(&room, target_quality))
         .or_else(|| first_flv_stream(&room))
         .ok_or_else(|| {
             "[Douyin Stream Detail] No FLV streams available in stream_url.flv_pull_url".to_string()
@@ -126,9 +147,9 @@ pub async fn get_douyin_live_stream_url_with_quality(
 
 fn normalize_quality_tag(input: &str) -> &str {
     match input.trim().to_uppercase().as_str() {
-        "OD" | "原画" => QUALITY_OD,
-        "BD" | "高清" => QUALITY_BD,
-        "UHD" | "标清" => QUALITY_UHD,
+        "OD" => QUALITY_OD,
+        "BD" => QUALITY_BD,
+        "UHD" => QUALITY_UHD,
         _ => QUALITY_OD,
     }
 }
@@ -228,4 +249,203 @@ fn first_flv_stream(room: &Value) -> Option<(String, String)> {
     flv_map
         .iter()
         .find_map(|(k, v)| v.as_str().map(|url| (k.to_string(), url.to_string())))
+}
+
+fn pick_douyin_flv_by_quality(
+    room: &Value,
+    target_quality: &str,
+    origin_override: Option<&str>,
+) -> Option<(String, String)> {
+    let flv_map = room
+        .get("stream_url")
+        .and_then(|v| v.get("flv_pull_url"))
+        .and_then(|v| v.as_object())?;
+
+    let origin_url = origin_override
+        .or_else(|| flv_map.get("ORIGIN").and_then(|v| v.as_str()));
+    let full_hd1 = flv_map.get("FULL_HD1").and_then(|v| v.as_str());
+    let hd1 = flv_map.get("HD1").and_then(|v| v.as_str());
+    let sd_fallback = flv_map
+        .get("SD1")
+        .and_then(|v| v.as_str())
+        .or_else(|| flv_map.get("SD2").and_then(|v| v.as_str()));
+
+    match target_quality {
+        QUALITY_OD => origin_url
+            .map(|u| ("ORIGIN".to_string(), u.to_string()))
+            .or_else(|| full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))),
+        QUALITY_UHD => {
+            if origin_url.is_some() {
+                full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))
+            } else {
+                hd1.map(|u| ("HD1".to_string(), u.to_string()))
+            }
+        }
+        QUALITY_BD => hd1
+            .map(|u| ("HD1".to_string(), u.to_string()))
+            .or_else(|| sd_fallback.map(|u| ("SD1".to_string(), u.to_string()))),
+        _ => None,
+    }
+}
+
+fn insert_origin_flv(room: &mut Value, origin_url: &str) {
+    let Some(stream_url) = room.get_mut("stream_url") else {
+        return;
+    };
+    let flv_map_val = stream_url.get_mut("flv_pull_url");
+    match flv_map_val {
+        Some(map_val) if map_val.is_object() => {
+            if let Some(map) = map_val.as_object_mut() {
+                map.insert("ORIGIN".to_string(), Value::String(origin_url.to_string()));
+            }
+        }
+        _ => {
+            let mut new_map = serde_json::Map::new();
+            new_map.insert("ORIGIN".to_string(), Value::String(origin_url.to_string()));
+            stream_url.as_object_mut().map(|obj| {
+                obj.insert("flv_pull_url".to_string(), Value::Object(new_map))
+            });
+        }
+    }
+}
+
+async fn fetch_and_save_douyin_live_page_snapshot(
+    http_client: &HttpClient,
+    web_id: &str,
+) -> Result<Option<String>, String> {
+    let desktop_dir = resolve_desktop_dir()
+        .ok_or_else(|| "Unable to resolve Desktop directory for snapshot".to_string())?;
+    let safe_id = sanitize_file_stem(web_id);
+    let file_name = format!("douyin_live_{}.html", safe_id);
+    let file_path = desktop_dir.join(file_name);
+
+    let url = format!("https://live.douyin.com/{}", web_id);
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
+    headers.insert(
+        REFERER,
+        HeaderValue::from_str(&url).map_err(|e| format!("Invalid Referer header: {}", e))?,
+    );
+
+    let html = http_client
+        .get_text_with_headers(&url, Some(headers))
+        .await?;
+    let origin = extract_origin_flv_from_html(&html);
+
+    std::fs::write(&file_path, html)
+        .map_err(|e| format!("Failed to write snapshot to {}: {}", file_path.display(), e))?;
+
+    println!(
+        "[Douyin Stream Detail] Saved live page snapshot to {}",
+        file_path.display()
+    );
+    Ok(origin)
+}
+
+fn resolve_desktop_dir() -> Option<PathBuf> {
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        return Some(PathBuf::from(profile).join("Desktop"));
+    }
+    let home_drive = std::env::var("HOMEDRIVE").ok();
+    let home_path = std::env::var("HOMEPATH").ok();
+    match (home_drive, home_path) {
+        (Some(drive), Some(path)) => Some(PathBuf::from(format!("{}{}", drive, path)).join("Desktop")),
+        _ => None,
+    }
+}
+
+fn sanitize_file_stem(input: &str) -> String {
+    let mut sanitized: String = input
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    if sanitized.is_empty() {
+        sanitized.push_str("unknown");
+    }
+    sanitized
+}
+
+fn extract_origin_flv_from_html(html: &str) -> Option<String> {
+    let re = Regex::new(r#"https?://[^"'\s]*stream-\d+\.flv[^"'\s]*"#).ok()?;
+    for m in re.find_iter(html) {
+        let mut url = unescape_js_escapes(m.as_str());
+        url = url.replace("&amp;", "&");
+        let host = url
+            .split("://")
+            .nth(1)
+            .and_then(|rest| rest.split('/').next())
+            .unwrap_or("");
+        if !url.contains("_uhd.flv")
+            && !url.contains("only_audio=1")
+            && !url.contains("pull-hs")
+            && !url.contains("wsSecret")
+            && host.contains("flv")
+        {
+            return Some(url);
+        }
+    }
+    None
+}
+
+fn unescape_js_escapes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.peek() {
+                Some('u') => {
+                    chars.next();
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        if let Some(h) = chars.next() {
+                            hex.push(h);
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Ok(code) = u16::from_str_radix(&hex, 16) {
+                        if let Some(decoded) = char::from_u32(code as u32) {
+                            out.push(decoded);
+                            continue;
+                        }
+                    }
+                    out.push('\\');
+                    out.push('u');
+                    out.push_str(&hex);
+                }
+                Some('/') => {
+                    chars.next();
+                    out.push('/');
+                }
+                Some('\\') => {
+                    chars.next();
+                    out.push('\\');
+                }
+                Some('"') => {
+                    chars.next();
+                    out.push('"');
+                }
+                Some('\'') => {
+                    chars.next();
+                    out.push('\'');
+                }
+                Some('n') => {
+                    chars.next();
+                    out.push('\n');
+                }
+                Some('r') => {
+                    chars.next();
+                    out.push('\r');
+                }
+                Some('t') => {
+                    chars.next();
+                    out.push('\t');
+                }
+                _ => out.push(ch),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }

@@ -3,6 +3,7 @@ use futures_util::{stream::SplitStream, SinkExt, StreamExt};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 use tokio_tungstenite::{connect_async, MaybeTlsStream};
@@ -26,7 +27,7 @@ pub async fn connect_and_manage_websocket(
     room_id: &str,
     cookie_header: &str,
     user_unique_id: &str,
-) -> Result<(SplitStream<WsStream>, Sender<WsMessage>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(SplitStream<WsStream>, Sender<WsMessage>, watch::Sender<bool>), Box<dyn std::error::Error + Send + Sync>> {
     let ws_cookie_header = cookie_header.to_string();
     let current_timestamp_ms = Utc::now().timestamp_millis();
     let first_req_ms = current_timestamp_ms - 100;
@@ -81,6 +82,8 @@ pub async fn connect_and_manage_websocket(
     // Channel for sending messages to the WebSocket Sink
     let (tx, mut rx) = mpsc::channel::<WsMessage>(32);
 
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
     // Spawn task for sending heartbeats and other messages from the channel
     tokio::spawn(async move {
         let heartbeat_msg_proto = PushFrame {
@@ -97,20 +100,30 @@ pub async fn connect_and_manage_websocket(
 
         loop {
             tokio::select! {
-                _ = ticker.tick() => {
-                    if let Err(e) = write.send(ws_ping_msg.clone()).await {
-                        println!("【X】心跳任务发送错误: {}, 连接可能已断开", e);
+                _ = shutdown_rx.changed() => {
+                    if *shutdown_rx.borrow() {
                         break;
                     }
                 }
-                Some(msg_to_send) = rx.recv() => {
-                    if let Err(e) = write.send(msg_to_send).await {
-                        println!("【X】消息发送任务错误: {}, 连接可能已断开", e);
-                        // Potentially break or signal error if a crucial message (like ACK) fails
-                        if matches!(e, tokio_tungstenite::tungstenite::Error::ConnectionClosed |
-                                       tokio_tungstenite::tungstenite::Error::AlreadyClosed) {
-                            break; // Stop if connection is closed
+                _ = ticker.tick() => {
+                    if let Err(e) = write.send(ws_ping_msg.clone()).await {
+                        println!("[Douyin Danmaku] Heartbeat send error: {}", e);
+                        break;
+                    }
+                }
+                msg_opt = rx.recv() => {
+                    match msg_opt {
+                        Some(msg_to_send) => {
+                            if let Err(e) = write.send(msg_to_send).await {
+                                println!("[Douyin Danmaku] Send error: {}", e);
+                                // Potentially break or signal error if a crucial message (like ACK) fails
+                                if matches!(e, tokio_tungstenite::tungstenite::Error::ConnectionClosed |
+                                               tokio_tungstenite::tungstenite::Error::AlreadyClosed) {
+                                    break; // Stop if connection is closed
+                                }
+                            }
                         }
+                        None => break,
                     }
                 }
                 else => {
@@ -122,5 +135,5 @@ pub async fn connect_and_manage_websocket(
         println!("WebSocket send/heartbeat task ended.");
     });
 
-    Ok((read, tx)) // Return the read stream and the sender for other tasks to send messages
+    Ok((read, tx, shutdown_tx)) // Return the read stream and the sender for other tasks to send messages
 }
