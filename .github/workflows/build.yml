@@ -68,6 +68,11 @@ jobs:
           choco install strawberryperl nasm -y
           echo "C:\Program Files\NASM" >> $GITHUB_PATH
           echo "C:\Strawberry\perl\bin" >> $GITHUB_PATH
+
+      - name: Set rusty_v8 archive (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v0.93.1/rusty_v8_release_x86_64-pc-windows-msvc.lib.gz" >> $GITHUB_ENV
           
       - name: Patch tauri config for Windows build
         if: matrix.platform == 'windows-latest'
