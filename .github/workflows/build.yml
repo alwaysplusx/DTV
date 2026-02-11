@@ -112,6 +112,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RUSTY_V8_MIRROR: https://github.com/denoland/rusty_v8/releases/download
         with:
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'DTV ${{ github.event.inputs.version || github.ref_name }}'
