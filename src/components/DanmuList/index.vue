@@ -1,5 +1,33 @@
 <template>
     <div class="danmu-list-wrapper">
+      <div class="danmu-actions-slot">
+        <slot name="actions" />
+      </div>
+      <div v-if="showFilterPanel" class="danmu-filter-panel" @pointerdown.stop>
+        <div class="panel-header">
+          <span class="panel-title">屏蔽关键词</span>
+          <button class="panel-close" type="button" @click="toggleFilterPanel" title="关闭">×</button>
+        </div>
+        <div class="panel-body">
+          <div class="panel-input-row">
+            <input
+              v-model="keywordInput"
+              class="panel-input"
+              type="text"
+              placeholder="输入关键词回车添加"
+              @keydown.enter.prevent="addKeyword"
+            />
+          </div>
+          <div class="panel-list">
+            <div v-if="blockedKeywords.length === 0" class="panel-empty">暂无屏蔽词</div>
+            <div v-for="(kw, i) in blockedKeywords" :key="`${kw}-${i}`" class="panel-item">
+              <span class="panel-item-text">{{ kw }}</span>
+              <button class="panel-remove" type="button" @click="removeKeyword(i)">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="danmu-messages-area" ref="danmakuListEl" @scroll="handleScroll" @pointerdown="onPointerDown">
         <!-- Empty/Loading Placeholder -->
         <div v-if="(!renderMessages || renderMessages.length === 0)" class="empty-danmu-placeholder">
@@ -60,6 +88,11 @@ const danmakuListEl = ref<HTMLElement | null>(null);
 const autoScroll = ref(true); 
 const userScrolled = ref(false);
 const pointerActive = ref(false);
+
+const showFilterPanel = ref(false);
+const keywordInput = ref('');
+const blockedKeywords = ref<string[]>([]);
+const BLOCK_KEYWORDS_STORAGE = 'danmu_block_keywords';
   
 const userColor = (nickname: string | undefined) => {
   if (!nickname || nickname.length === 0) {
@@ -132,19 +165,29 @@ const onPointerDown = () => {
 
 watch(() => props.messages, (newMessages, _oldMessages) => {
   const msgs = Array.isArray(newMessages) ? newMessages : [];
-  if (msgs.length > MAX_MSG) {
+  const filtered = filterBlockedMessages(msgs);
+  if (filtered.length > MAX_MSG) {
     // 批量裁剪，避免频繁处理导致性能问题
-    if (msgs.length % PRUNE_BATCH === 0 || msgs.length > MAX_MSG + PRUNE_BATCH) {
-      renderMessages.value = msgs.slice(-MAX_MSG);
+    if (filtered.length % PRUNE_BATCH === 0 || filtered.length > MAX_MSG + PRUNE_BATCH) {
+      renderMessages.value = filtered.slice(-MAX_MSG);
     } else {
-      renderMessages.value = msgs.slice(-MAX_MSG);
+      renderMessages.value = filtered.slice(-MAX_MSG);
     }
   } else {
-    renderMessages.value = msgs;
+    renderMessages.value = filtered;
   }
   if (!pointerActive.value) {
     scrollToBottomForce();
   } else if (autoScroll.value || isNearBottom()) {
+    scrollToBottomForce();
+  }
+}, { deep: true });
+
+watch(blockedKeywords, () => {
+  const msgs = Array.isArray(props.messages) ? props.messages : [];
+  const filtered = filterBlockedMessages(msgs);
+  renderMessages.value = filtered.length > MAX_MSG ? filtered.slice(-MAX_MSG) : filtered;
+  if (!pointerActive.value || autoScroll.value || isNearBottom()) {
     scrollToBottomForce();
   }
 }, { deep: true });
@@ -161,11 +204,73 @@ onMounted(() => {
 
 onMounted(() => {
   window.addEventListener('pointerup', onGlobalPointerUp);
+  loadBlockedKeywords();
 });
 
 onUnmounted(() => {
   window.removeEventListener('pointerup', onGlobalPointerUp);
 });
+
+const toggleFilterPanel = () => {
+  showFilterPanel.value = !showFilterPanel.value;
+};
+
+defineExpose({
+  toggleFilterPanel,
+});
+
+const loadBlockedKeywords = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(BLOCK_KEYWORDS_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        blockedKeywords.value = parsed.filter((v) => typeof v === 'string' && v.trim().length > 0);
+      }
+    }
+  } catch (err) {
+    console.warn('[DanmuList] Failed to load blocked keywords:', err);
+  }
+};
+
+const persistBlockedKeywords = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(BLOCK_KEYWORDS_STORAGE, JSON.stringify(blockedKeywords.value));
+  } catch (err) {
+    console.warn('[DanmuList] Failed to save blocked keywords:', err);
+  }
+};
+
+const addKeyword = () => {
+  const kw = keywordInput.value.trim();
+  if (!kw) return;
+  if (blockedKeywords.value.some((k) => k.toLowerCase() === kw.toLowerCase())) {
+    keywordInput.value = '';
+    return;
+  }
+  blockedKeywords.value = [...blockedKeywords.value, kw];
+  keywordInput.value = '';
+  persistBlockedKeywords();
+};
+
+const removeKeyword = (idx: number) => {
+  if (idx < 0 || idx >= blockedKeywords.value.length) return;
+  blockedKeywords.value = blockedKeywords.value.filter((_, i) => i !== idx);
+  persistBlockedKeywords();
+};
+
+const filterBlockedMessages = (messages: DanmakuUIMessage[]) => {
+  if (!blockedKeywords.value.length) return messages;
+  const keywords = blockedKeywords.value.map((k) => k.toLowerCase());
+  return messages.filter((msg) => {
+    if (msg.isSystem) return true;
+    const content = (msg.content || '').toLowerCase();
+    if (!content) return true;
+    return !keywords.some((kw) => content.includes(kw));
+  });
+};
 
 const copyDanmaku = async (danmaku: DanmakuUIMessage) => {
   const parts: string[] = [];
@@ -229,6 +334,130 @@ const copyDanmaku = async (danmaku: DanmakuUIMessage) => {
   .danmu-list-wrapper > * {
     position: relative;
     z-index: 1;
+  }
+
+  .danmu-actions-slot {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .danmu-actions-slot :deep(*) {
+    pointer-events: auto;
+  }
+
+  .danmu-filter-panel {
+    position: absolute;
+    top: 52px;
+    right: 12px;
+    width: min(280px, calc(100% - 24px));
+    background: rgba(15, 18, 30, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px 12px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 3;
+    box-shadow: 0 10px 24px rgba(7, 12, 24, 0.35);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .panel-title {
+    font-size: 0.8rem;
+    color: rgba(229, 236, 255, 0.9);
+    font-weight: 600;
+  }
+
+  .panel-close {
+    border: none;
+    background: transparent;
+    color: rgba(229, 236, 255, 0.7);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .panel-input-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .panel-input {
+    flex: 1;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(236, 242, 255, 0.92);
+    padding: 0 8px;
+    font-size: 0.78rem;
+    outline: none;
+  }
+
+  .panel-list {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 2px;
+  }
+
+  .panel-list::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .panel-empty {
+    font-size: 0.76rem;
+    color: rgba(200, 210, 236, 0.75);
+    text-align: center;
+    padding: 6px 0;
+  }
+
+  .panel-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+
+  .panel-item-text {
+    font-size: 0.78rem;
+    color: rgba(236, 242, 255, 0.9);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .panel-remove {
+    border: none;
+    background: rgba(255, 92, 92, 0.2);
+    color: #ffb2b2;
+    padding: 2px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.72rem;
   }
   
   .danmu-messages-area {
@@ -439,6 +668,35 @@ const copyDanmaku = async (danmaku: DanmakuUIMessage) => {
   box-shadow:
     0 2px 6px rgba(15, 23, 42, 0.06),
     0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .danmu-filter-panel {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+
+:root[data-theme="light"] .panel-title {
+  color: rgba(31, 41, 55, 0.9);
+}
+
+:root[data-theme="light"] .panel-input {
+  background: rgba(248, 250, 252, 1);
+  color: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.9);
+}
+
+:root[data-theme="light"] .panel-item {
+  background: rgba(248, 250, 252, 1);
+  border: 1px solid rgba(203, 213, 225, 0.9);
+}
+
+:root[data-theme="light"] .panel-item-text {
+  color: rgba(31, 41, 55, 0.9);
+}
+
+:root[data-theme="light"] .panel-empty {
+  color: rgba(100, 116, 139, 0.85);
 }
 
 :root[data-theme="light"] .danmu-list-wrapper::before {

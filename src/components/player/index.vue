@@ -84,16 +84,6 @@
         </div>
       </div>
 
-      <button
-        v-if="canToggleDanmuPanel && !isDanmuCollapsed && !isFullScreen"
-        type="button"
-        class="danmu-collapse-btn"
-        title="折叠弹幕列表"
-        @click="collapseDanmuPanel"
-      >
-        <PanelRightClose :size="22" />
-      </button>
-
       <DanmuList 
         v-if="roomId && !isLoadingStream && !streamError && isDanmuVisible" 
         :room-id="props.roomId"
@@ -101,7 +91,32 @@
         v-show="!isFullScreen" 
         class="danmu-panel" 
         :class="{'hidden-panel': isFullScreen}"
-      />
+        ref="danmuListRef"
+      >
+        <template #actions>
+          <div
+            v-if="canToggleDanmuPanel && !isDanmuCollapsed && !isFullScreen"
+            class="danmu-panel-actions"
+          >
+            <button
+              type="button"
+              class="danmu-filter-toggle-btn"
+              title="屏蔽关键词"
+              @click="toggleDanmuFilterPanel"
+            >
+              <Funnel :size="18" />
+            </button>
+            <button
+              type="button"
+              class="danmu-collapse-btn"
+              title="折叠弹幕列表"
+              @click="collapseDanmuPanel"
+            >
+              <PanelRightClose :size="22" />
+            </button>
+          </div>
+        </template>
+      </DanmuList>
     </div>
   </div>
 </template>
@@ -112,7 +127,7 @@ import Player from 'xgplayer';
 import FlvPlugin from 'xgplayer-flv';
 import HlsPlugin from 'xgplayer-hls.js';
 import { POSITIONS } from 'xgplayer/es/plugin/plugin.js';
-import { PanelRightClose } from 'lucide-vue-next';
+import { Funnel, PanelRightClose } from 'lucide-vue-next';
 import 'xgplayer/dist/index.min.css';
 
 import './player.css';
@@ -201,6 +216,10 @@ const expandDanmuPanel = () => {
   }
 };
 
+const toggleDanmuFilterPanel = () => {
+  danmuListRef.value?.toggleFilterPanel?.();
+};
+
 const broadcastIslandState = () => {
   if (typeof window === 'undefined') {
     return;
@@ -218,6 +237,7 @@ const broadcastIslandState = () => {
 };
 
 const playerContainerRef = ref<HTMLDivElement | null>(null);
+const danmuListRef = ref<{ toggleFilterPanel?: () => void } | null>(null);
 const playerInstance = shallowRef<Player | null>(null);
 const refreshControlPlugin = shallowRef<RefreshControl | null>(null);
 const qualityControlPlugin = shallowRef<QualityControl | null>(null);

@@ -137,7 +137,7 @@ export async function startDouyinDanmakuListener(
         room_id: rustP.room_id || roomId, // Ensure room_id is present
       };
 
-      const shouldDisplay = renderOptions?.shouldDisplay ? renderOptions.shouldDisplay() : true;
+      const shouldDisplay = renderOptions?.shouldDisplay ? renderOptions.shouldDisplay(frontendDanmaku) : true;
 
       if (shouldDisplay && danmuOverlay?.sendComment) {
         try {

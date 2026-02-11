@@ -19,6 +19,38 @@ export interface DanmakuManagerContext {
   props: PlayerProps;
 }
 
+const BLOCK_KEYWORDS_STORAGE = 'danmu_block_keywords';
+
+const loadBlockedKeywords = (): string[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(BLOCK_KEYWORDS_STORAGE);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((v) => typeof v === 'string')
+      .map((v) => v.trim().toLowerCase())
+      .filter((v) => v.length > 0);
+  } catch (err) {
+    console.warn('[Player] Failed to read danmu block keywords:', err);
+    return [];
+  }
+};
+
+const isBlockedMessage = (message?: DanmakuMessage) => {
+  if (!message || message.isSystem) {
+    return false;
+  }
+  const content = (message.content || '').toLowerCase();
+  if (!content) return false;
+  const keywords = loadBlockedKeywords();
+  if (!keywords.length) return false;
+  return keywords.some((kw) => content.includes(kw));
+};
+
 export const startCurrentDanmakuListener = async (
   ctx: DanmakuManagerContext,
   platform: StreamingPlatform,
@@ -36,7 +68,8 @@ export const startCurrentDanmakuListener = async (
 
   try {
     const renderOptions = {
-      shouldDisplay: () => ctx.isDanmuEnabled.value,
+      shouldDisplay: (message?: DanmakuMessage) =>
+        ctx.isDanmuEnabled.value && !isBlockedMessage(message),
       buildCommentOptions: () => ({
         duration: ctx.danmuSettings.duration,
         mode: ctx.danmuSettings.mode,

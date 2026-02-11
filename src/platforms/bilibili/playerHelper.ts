@@ -145,7 +145,7 @@ export async function startBilibiliDanmakuListener(
       room_id: roomId,
     };
 
-    const shouldDisplay = renderOptions?.shouldDisplay ? renderOptions.shouldDisplay() : true;
+    const shouldDisplay = renderOptions?.shouldDisplay ? renderOptions.shouldDisplay(frontendDanmaku) : true;
 
     if (shouldDisplay && danmuOverlay?.sendComment) {
       try {

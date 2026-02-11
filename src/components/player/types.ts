@@ -49,7 +49,7 @@ export interface DanmuOverlayInstance {
 }
 
 export interface DanmuRenderOptions {
-  shouldDisplay?: () => boolean;
+  shouldDisplay?: (message?: DanmakuMessage) => boolean;
   buildCommentOptions?: (message: DanmakuMessage) => {
     duration?: number;
     mode?: string;
