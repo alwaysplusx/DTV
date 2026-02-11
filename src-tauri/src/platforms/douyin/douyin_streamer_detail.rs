@@ -270,11 +270,7 @@ fn pick_douyin_flv_by_quality(
             .map(|u| ("ORIGIN".to_string(), u.to_string()))
             .or_else(|| full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))),
         QUALITY_UHD => {
-            if origin_url.is_some() {
-                full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))
-            } else {
-                hd1.map(|u| ("HD1".to_string(), u.to_string()))
-            }
+            full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))
         }
         QUALITY_BD => hd1
             .map(|u| ("HD1".to_string(), u.to_string()))

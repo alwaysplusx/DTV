@@ -27,7 +27,7 @@ defineProps<{
 .cate1-list-container {
   overflow-x: auto;
   flex-shrink: 0;
-  padding: 4px 0 10px;
+  padding: 2px 0 10px;
   transition: all 0.2s ease;
   border: none;
   box-shadow: none;

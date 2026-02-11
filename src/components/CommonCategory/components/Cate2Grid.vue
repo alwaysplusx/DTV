@@ -155,19 +155,7 @@ const handleToggleInternalExpand = () => {
 }
 
 .cate2-content::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 18px;
-  background: linear-gradient(to bottom, rgba(245, 245, 247, 0), rgba(245, 245, 247, 0.85));
-  pointer-events: none;
-  opacity: 0.9;
-}
-
-:root[data-theme="dark"] .cate2-content::after {
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6));
+  content: none;
 }
 
 .cate2-scroll-wrapper {
@@ -188,15 +176,16 @@ const handleToggleInternalExpand = () => {
 
 .cate2-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 10px;
   justify-content: flex-start;
   padding-bottom: 12px;
 }
 
 .cate2-card {
-  height: 40px;
-  padding: 0 14px;
+  min-height: 36px;
+  padding: 4px 6px;
+  width: 100%;
   border-radius: 16px;
   cursor: pointer;
   transition: none;
@@ -238,6 +227,22 @@ const handleToggleInternalExpand = () => {
   color: #cbd5d1;
 }
 
+:root[data-theme="dark"] .cate2-card:not(.active) {
+  background: rgba(50, 56, 60, 0.82);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="dark"] .cate2-card:hover:not(.active) {
+  background: rgba(56, 63, 67, 0.86);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.24);
+}
+
 :root[data-theme="light"] .cate2-card {
   color: #6c7270;
 }
@@ -247,14 +252,20 @@ const handleToggleInternalExpand = () => {
 }
 
 :root[data-theme="dark"] .cate2-card.active {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(145, 154, 160, 0.28);
+  border-style: solid;
+  border-width: 0.75px 0.35px;
+  border-color: rgba(237, 244, 248, 0.34);
   color: #f6fbf7;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .expand-button {
   position: relative;
   align-self: center;
-  margin-top: 2px;
+  margin-top: -6px;
   display: inline-flex;
   align-items: center;
   gap: 6px;

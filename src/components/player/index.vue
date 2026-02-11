@@ -75,7 +75,7 @@
             @follow="$emit('follow', $event)"
             @unfollow="$emit('unfollow', $event)"
             class="streamer-info"
-            v-show="!isInWebFullscreen"
+            v-show="!isInWebFullscreen && !isDanmuCollapsed"
             :class="{'hidden-panel': isInWebFullscreen}"
           />
           <div class="video-container">
@@ -84,8 +84,18 @@
         </div>
       </div>
 
+      <button
+        v-if="canToggleDanmuPanel && !isDanmuCollapsed && !isFullScreen"
+        type="button"
+        class="danmu-collapse-btn"
+        title="折叠弹幕列表"
+        @click="collapseDanmuPanel"
+      >
+        <PanelRightClose :size="22" />
+      </button>
+
       <DanmuList 
-        v-if="roomId && !isLoadingStream && !streamError && showDanmuPanel" 
+        v-if="roomId && !isLoadingStream && !streamError && isDanmuVisible" 
         :room-id="props.roomId"
         :messages="danmakuMessages"
         v-show="!isFullScreen" 
@@ -97,11 +107,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue';
 import Player from 'xgplayer';
 import FlvPlugin from 'xgplayer-flv';
 import HlsPlugin from 'xgplayer-hls.js';
 import { POSITIONS } from 'xgplayer/es/plugin/plugin.js';
+import { PanelRightClose } from 'lucide-vue-next';
 import 'xgplayer/dist/index.min.css';
 
 import './player.css';
@@ -161,11 +172,50 @@ const emit = defineEmits<{
 
 const isClosing = ref(false);
 const MIN_DANMU_WIDTH = 1100;
+const DANMU_COLLAPSED_STORAGE_KEY = 'dtv_player_danmu_collapsed';
+const PLAYER_ISLAND_EVENT = 'dtv-player-island-state';
+const PLAYER_ISLAND_EXPAND_EVENT = 'dtv-player-island-expand';
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0);
 const updateWindowWidth = () => {
   windowWidth.value = typeof window !== 'undefined' ? window.innerWidth : 0;
 };
 const showDanmuPanel = computed(() => windowWidth.value >= MIN_DANMU_WIDTH);
+const isDanmuCollapsed = ref(
+  typeof window !== 'undefined' && window.localStorage.getItem(DANMU_COLLAPSED_STORAGE_KEY) === '1',
+);
+const canToggleDanmuPanel = computed(() => showDanmuPanel.value && !!props.roomId && !isLoadingStream.value && !streamError.value);
+const isDanmuVisible = computed(() => canToggleDanmuPanel.value && !isDanmuCollapsed.value);
+const showCompactIsland = computed(() => isDanmuCollapsed.value && canToggleDanmuPanel.value && !isFullScreen.value);
+
+const collapseDanmuPanel = () => {
+  isDanmuCollapsed.value = true;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(DANMU_COLLAPSED_STORAGE_KEY, '1');
+  }
+};
+
+const expandDanmuPanel = () => {
+  isDanmuCollapsed.value = false;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(DANMU_COLLAPSED_STORAGE_KEY, '0');
+  }
+};
+
+const broadcastIslandState = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(PLAYER_ISLAND_EVENT, {
+    detail: {
+      visible: showCompactIsland.value,
+      anchorName: playerAnchorName.value ?? '',
+      title: playerTitle.value ?? '',
+      avatarUrl: playerAvatar.value ?? null,
+      roomId: props.roomId ?? null,
+      platform: props.platform ?? null,
+    },
+  }));
+};
 
 const playerContainerRef = ref<HTMLDivElement | null>(null);
 const playerInstance = shallowRef<Player | null>(null);
@@ -921,6 +971,22 @@ registerPlayerWatchers({
   playerRoot: () => playerInstance.value?.root as HTMLElement | null,
 });
 
+watch(showDanmuPanel, (available) => {
+  if (!available) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DANMU_COLLAPSED_STORAGE_KEY, isDanmuCollapsed.value ? '1' : '0');
+    }
+  }
+});
+
+watch(
+  [showCompactIsland, playerAnchorName, playerTitle, playerAvatar],
+  () => {
+    broadcastIslandState();
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   updateWindowWidth();
   if (typeof window !== 'undefined') {
@@ -943,6 +1009,10 @@ onMounted(async () => {
   }
 
   persistCurrentDanmuPreferences();
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener(PLAYER_ISLAND_EXPAND_EVENT, expandDanmuPanel);
+  }
 });
 
 onUnmounted(async () => {
@@ -959,6 +1029,13 @@ onUnmounted(async () => {
 
   destroyPlayerInstance();
   danmakuMessages.value = []; 
+
+  if (typeof window !== 'undefined') {
+    window.removeEventListener(PLAYER_ISLAND_EXPAND_EVENT, expandDanmuPanel);
+    window.dispatchEvent(new CustomEvent(PLAYER_ISLAND_EVENT, {
+      detail: { visible: false, anchorName: '', title: '', avatarUrl: null, roomId: null, platform: null },
+    }));
+  }
 });
 
 </script>

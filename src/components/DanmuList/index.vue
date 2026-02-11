@@ -436,7 +436,9 @@ const copyDanmaku = async (danmaku: DanmakuUIMessage) => {
   color: var(--primary-text-light, #1f2937);
   border: 1px solid var(--glass-border);
   border-left: none;
-  box-shadow: none;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
 :root[data-theme="light"] .danmu-list-wrapper::before {

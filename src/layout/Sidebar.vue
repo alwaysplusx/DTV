@@ -1,12 +1,11 @@
 <template>
   <aside
-    class="mica sidebar-shell"
+    class="sidebar-shell"
     :style="{
       width: isCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      borderRight: '1px solid var(--border)',
       transition: 'none',
     }"
   >
@@ -40,12 +39,13 @@ const emit = defineEmits<{
 <style scoped>
 .sidebar-shell {
   z-index: 100;
+  background-color: var(--bg-primary);
 }
 
 .sidebar-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-  padding: 0 8px 8px;
+  overflow: visible;
+  padding: 8px;
 }
 </style>

@@ -15,7 +15,7 @@
   min-height: 0;
   background: transparent;
   background-image: none;
-  padding: 12px 0;
+  padding: 12px 0 12px 8px;
   box-sizing: border-box;
   overflow: hidden;
   position: relative;
@@ -41,9 +41,10 @@
   max-height: 100%;
   min-height: 0;
   gap: 0;
-  padding-right: 12px;
+  padding-right: 12px !important;
   overflow: hidden;
   box-sizing: border-box;
+  position: relative;
 }
 
 .player-layout .main-content {
@@ -55,7 +56,7 @@
   height: 100%;
   max-height: 100%;
   overflow: hidden;
-  padding-left: 12px;
+  padding-left: 0;
   box-sizing: border-box;
 }
 
@@ -68,7 +69,9 @@
   border-radius: var(--radius-md) 0 0 var(--radius-md);
   border: 1px solid var(--border-color);
   border-right: none;
-  box-shadow: var(--glass-shadow);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    var(--glass-shadow);
   overflow: hidden;
   min-height: 0;
   height: 100%;
@@ -755,6 +758,7 @@
   height: 100%;
   min-height: 0;
   flex: 0 0 220px;
+  margin-right: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -768,7 +772,7 @@
 }
 
 .danmu-panel:hover {
-  transform: translateY(-3px);
+  transform: none;
   box-shadow: none;
 }
 
@@ -931,8 +935,8 @@ html.web-fs-active .danmu-panel {
 .player-close-btn {
   position: absolute;
   top: 4px;
-  left: 4px;
-  z-index: 100;
+  left: 1px;
+  z-index: 260;
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -947,14 +951,14 @@ html.web-fs-active .danmu-panel {
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
 }
 
 .player-close-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   transform: scale(1.1);
   border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .player-close-btn:active {
@@ -964,6 +968,123 @@ html.web-fs-active .danmu-panel {
 .player-close-btn svg {
   width: 16px;
   height: 16px;
+}
+
+.danmu-collapse-btn {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  z-index: 60;
+  border: none;
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: rgba(245, 247, 250, 0.84);
+  background: rgba(56, 64, 72, 0.74);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.danmu-collapse-btn:hover {
+  background: rgba(72, 80, 88, 0.86);
+  color: rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+}
+
+.player-compact-island {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  width: min(560px, calc(100% - 170px));
+  min-height: 44px;
+  border-radius: 999px;
+  background: rgba(23, 28, 34, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.26);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px 6px 8px;
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+
+.compact-island-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+  flex: 0 0 auto;
+}
+
+.compact-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compact-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.compact-name {
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-title {
+  color: rgba(203, 213, 225, 0.88);
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-expand-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.96);
+  background: rgba(148, 163, 184, 0.22);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex: 0 0 auto;
+}
+
+.compact-expand-btn:hover {
+  background: rgba(148, 163, 184, 0.3);
 }
 
 /* 空播放器状态 */
@@ -1222,6 +1343,7 @@ html.web-fs-active .danmu-panel {
   .danmu-panel {
     width: 100%;
     height: 250px;
+    margin-right: 0;
     border-radius: 12px;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -1255,7 +1377,7 @@ html.web-fs-active .danmu-panel {
 
   .player-close-btn {
     top: 20px;
-    left: 20px;
+    left: 16px;
     width: 36px;
     height: 36px;
   }
@@ -1274,6 +1396,7 @@ html.web-fs-active .danmu-panel {
 
   .danmu-panel {
     height: 200px;
+    margin-right: 0;
     border-radius: 12px;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -1324,7 +1447,62 @@ html.web-fs-active .danmu-panel {
 /* Day Mode Styles */
 :root[data-theme="light"] .player-page {
   background: transparent;
-  /* Light background */
+}
+
+:root[data-theme="light"] .player-compact-island {
+  background: rgba(248, 250, 252, 0.9);
+  border-color: #ffffff;
+  box-shadow:
+    0 3px 8px rgba(15, 23, 42, 0.08),
+    0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .compact-avatar {
+  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.22);
+}
+
+:root[data-theme="light"] .compact-avatar--fallback {
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .compact-name {
+  color: #111827;
+}
+
+:root[data-theme="light"] .compact-title {
+  color: #475569;
+}
+
+:root[data-theme="light"] .compact-expand-btn {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+:root[data-theme="light"] .compact-expand-btn:hover {
+  background: rgba(148, 163, 184, 0.34);
+}
+
+:root[data-theme="light"] .danmu-collapse-btn {
+  color: #111827;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid #ffffff;
+}
+
+:root[data-theme="light"] .danmu-collapse-btn:hover {
+  background: rgba(241, 245, 249, 0.98);
+}
+
+:root[data-theme="light"] .player-layout {
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+/* Night mode: player outer shell should be borderless like the danmu panel */
+:root[data-theme="dark"] .player-container {
+  border: none;
+  box-shadow: var(--glass-shadow);
 }
 
 :root[data-theme="light"] .player-container {
@@ -1332,22 +1510,28 @@ html.web-fs-active .danmu-panel {
   backdrop-filter: none;
   /* Remove blur for light mode if desired, or adjust */
   -webkit-backdrop-filter: none;
-  border: 1px solid var(--glass-border);
-  border-right: none;
-  box-shadow: none;
+  border: none;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
 :root[data-theme="light"] .danmu-panel {
   background-color: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  border: 1px solid var(--glass-border);
-  border-left: none;
-  box-shadow: none;
+  border: none;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .player-layout .main-content {
+  overflow: visible;
 }
 
 :root[data-theme="light"] .danmu-panel:hover {
-  transform: translateY(-2px);
+  transform: none;
   /* Subtle lift */
   box-shadow: none;
 }

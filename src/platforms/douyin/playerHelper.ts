@@ -105,8 +105,8 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
 function normalizeDouyinQuality(input: string): string {
   const upper = input.trim().toUpperCase();
   if (upper === 'OD' || upper === '原画') return 'OD';
-  if (upper === 'BD' || upper === '高清') return 'BD';
-  if (upper === 'UHD' || upper === '标清') return 'UHD';
+  if (upper === 'BD' || upper === '标清') return 'BD';
+  if (upper === 'UHD' || upper === '高清') return 'UHD';
   return 'OD';
 }
 

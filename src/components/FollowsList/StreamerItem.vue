@@ -63,7 +63,7 @@
 .item-content {
   display: flex;
   align-items: center;
-  padding: 4px 8.5px;
+  padding: 2px 2px;
   gap: 10px;
   flex: 1;
   min-width: 0;
@@ -188,7 +188,7 @@
   align-items: center;
   margin-left: auto;
   flex: 0 0 auto;
-  padding-right: 14px;
+  padding-right: 6px;
   z-index: 2;
 }
 
@@ -197,7 +197,7 @@
   align-items: center;
   gap: 6px;
   border-radius: 20px;
-  padding: 3px 10px;
+  padding: 3px 6px 3px 8px;
   background: var(--tertiary-bg);
   color: var(--primary-text);
   font-size: 10px;
@@ -217,7 +217,7 @@
   background: #10b981; 
 }
 
-.live-indicator.is-replay { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+.live-indicator.is-replay { background: #f59e0b; box-shadow: none; }
 .live-indicator.is-offline { background: var(--border-color); }
 :root[data-theme="light"] .live-indicator.is-offline { background: #9ca3af; }
 </style>

@@ -54,7 +54,13 @@
       </div>
       
       <div class="list-content" ref="listRef" @scroll.passive="handleListScroll" @mouseleave="handleListMouseLeave">
-        <div class="hover-highlight" aria-hidden="true"></div>
+        <motion.div
+          class="hover-highlight"
+          aria-hidden="true"
+          :initial="hoverHighlightInitial"
+          :animate="hoverHighlightMotion"
+          :transition="hoverHighlightTransition"
+        />
         <div v-if="listItems.length === 0" class="empty-state">
           <div class="empty-image">
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather feather-heart">
@@ -83,7 +89,7 @@
             }"
             @mousedown="handleMouseDown($event, index)"
             @mouseenter="handleItemMouseEnter($event, index)"
-            @mouseleave="handleItemMouseLeave(index)"
+            @mouseleave="handleItemMouseLeave"
           >
             <!-- 文件夹项 -->
             <FolderItem
@@ -173,7 +179,8 @@
   </template>
   
   <script setup lang="ts">
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+import { ref, onMounted, computed, watch, onUnmounted, reactive } from 'vue';
+import { motion } from 'motion-v';
   import type { FollowedStreamer, LiveStatus } from '../../platforms/common/types';
   import { Platform } from '../../platforms/common/types';
   // import type { DouyuRoomInfo } from '../../platforms/douyu/types'; // No longer needed here
@@ -230,12 +237,16 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 
   const listRef = ref<HTMLElement | null>(null);
   let hoveredItem: HTMLElement | null = null;
-  let hoverRaf: number | null = null;
-  let hoverAnimating = false;
-  let hoverCurrentY = 0;
-  let hoverCurrentH = 0;
-  let hoverTargetY = 0;
-  let hoverTargetH = 0;
+  const hoverHighlight = reactive({ x: 0, y: 0, width: 0, height: 38, visible: false });
+  const hoverHighlightInitial = { x: 0, y: 0, width: 0, height: 38, opacity: 0 };
+  const hoverHighlightTransition = { type: 'spring', stiffness: 280, damping: 28, mass: 0.7 } as const;
+  const hoverHighlightMotion = computed(() => ({
+    x: hoverHighlight.x,
+    y: hoverHighlight.y,
+    width: hoverHighlight.width,
+    height: hoverHighlight.height,
+    opacity: hoverHighlight.visible ? 1 : 0,
+  }));
   const isDragging = ref(false);
   const draggedIndex = ref(-1);
   const startY = ref(0);
@@ -465,52 +476,23 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 
   
   // 文件夹展开/折叠
-  const animateHoverHighlight = () => {
-    const listEl = listRef.value;
-    if (!listEl) {
-      hoverAnimating = false;
-      return;
-    }
-    const dy = hoverTargetY - hoverCurrentY;
-    const dh = hoverTargetH - hoverCurrentH;
-    hoverCurrentY += dy * 0.18;
-    hoverCurrentH += dh * 0.18;
-    if (Math.abs(dy) < 0.4) hoverCurrentY = hoverTargetY;
-    if (Math.abs(dh) < 0.4) hoverCurrentH = hoverTargetH;
-    listEl.style.setProperty('--hover-y', `${hoverCurrentY}px`);
-    listEl.style.setProperty('--hover-h', `${hoverCurrentH}px`);
-    if (hoveredItem || Math.abs(dy) >= 0.4 || Math.abs(dh) >= 0.4) {
-      hoverRaf = window.requestAnimationFrame(animateHoverHighlight);
-      return;
-    }
-    hoverAnimating = false;
-    hoverRaf = null;
-  };
-
   const applyHoverHighlight = () => {
     const listEl = listRef.value;
-    if (!listEl) return;
+    if (!listEl) {
+      hoverHighlight.visible = false;
+      return;
+    }
     if (!hoveredItem) {
-      listEl.style.setProperty('--hover-opacity', '0');
-      hoverTargetY = hoverCurrentY;
-      hoverTargetH = hoverCurrentH;
-      if (!hoverAnimating) {
-        hoverAnimating = true;
-        hoverRaf = window.requestAnimationFrame(animateHoverHighlight);
-      }
+      hoverHighlight.visible = false;
       return;
     }
     const listRect = listEl.getBoundingClientRect();
     const itemRect = hoveredItem.getBoundingClientRect();
-    const y = itemRect.top - listRect.top + listEl.scrollTop;
-    const h = hoveredItem.offsetHeight;
-    listEl.style.setProperty('--hover-opacity', '1');
-    hoverTargetY = Math.max(0, y);
-    hoverTargetH = Math.max(0, h);
-    if (!hoverAnimating) {
-      hoverAnimating = true;
-      hoverRaf = window.requestAnimationFrame(animateHoverHighlight);
-    }
+    hoverHighlight.x = itemRect.left - listRect.left + listEl.scrollLeft;
+    hoverHighlight.y = itemRect.top - listRect.top + listEl.scrollTop;
+    hoverHighlight.width = itemRect.width;
+    hoverHighlight.height = hoveredItem.offsetHeight;
+    hoverHighlight.visible = true;
   };
 
   const scheduleHoverHighlight = () => {
@@ -528,13 +510,13 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
     scheduleHoverHighlight();
   };
 
-  const handleItemMouseLeave = (_index: number) => {
-    hoveredItem = null;
-    scheduleHoverHighlight();
+  const handleItemMouseLeave = () => {
+    // keep highlight alive when moving between items; hide only on list mouse leave
   };
 
   const handleListMouseLeave = () => {
     hoveredItem = null;
+    hoverHighlight.visible = false;
     scheduleHoverHighlight();
   };
 
@@ -1206,11 +1188,8 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
   
   onUnmounted(() => {
     clearAnimationTimeout();
-    if (hoverRaf !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(hoverRaf);
-      hoverRaf = null;
-    }
-    
+    hoveredItem = null;
+    hoverHighlight.visible = false;
   });
   </script>
   
@@ -1271,4 +1250,5 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 .streamers-list.dragging-streamer .folder-streamer-item {
   pointer-events: none;
 }
+
 </style>

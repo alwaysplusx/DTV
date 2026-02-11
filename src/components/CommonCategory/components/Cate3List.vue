@@ -110,4 +110,20 @@ const selectAll = () => {
 :root[data-theme="light"] .cate3-item.active {
   color: #1f2937;
 }
+
+:root[data-theme="dark"] .cate3-item:not(.active) {
+  background: rgba(50, 56, 60, 0.82);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="dark"] .cate3-item:hover:not(.active) {
+  background: rgba(56, 63, 67, 0.86);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.24);
+}
 </style>

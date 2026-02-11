@@ -1,15 +1,15 @@
 ﻿<template>
   <nav
-    class="mica navbar"
+    :class="['navbar', { 'navbar--dark': effectiveTheme === 'dark' }]"
     data-tauri-drag-region
     :style="{
       height: 'var(--navbar-height)',
       display: 'flex',
       alignItems: 'center',
       padding: '0 32px',
-      paddingLeft: '16px',
+      paddingLeft: '10px',
       paddingRight: shouldShowWindowsControls && !isMacPreview ? '160px' : '16px',
-      borderBottom: '1px solid var(--border)',
+      borderBottom: 'none',
       position: 'sticky',
       top: 0,
       zIndex: 50,
@@ -24,7 +24,13 @@
 
     <div class="platform-tabs-wrap" data-tauri-drag-region>
       <div class="platform-tabs" ref="platformTabsRef" data-tauri-drag-region>
-        <div class="platform-highlight" :style="highlightStyles" data-tauri-drag-region />
+        <motion.div
+          class="platform-highlight"
+          data-tauri-drag-region
+          :initial="false"
+          :animate="highlightMotion"
+          :transition="platformHighlightTransition"
+        />
       <button
         v-for="platform in platforms"
         :key="platform.id"
@@ -40,6 +46,48 @@
     </div>
     </div>
 
+    <div
+      v-if="playerIsland.visible && isPlayerRoute"
+      class="navbar-player-island"
+      data-tauri-drag-region="false"
+    >
+      <div class="navbar-player-island__left">
+        <div class="navbar-player-island__live" aria-hidden="true">
+          <span class="live-wave wave-1"></span>
+          <span class="live-wave wave-2"></span>
+          <span class="live-wave wave-3"></span>
+        </div>
+        <img
+          v-if="playerIsland.avatarUrl"
+          :src="playerIsland.avatarUrl"
+          :alt="islandDisplayName"
+          class="navbar-player-island__avatar"
+        />
+        <div v-else class="navbar-player-island__avatar navbar-player-island__avatar--fallback">
+          {{ islandDisplayName.slice(0, 1) }}
+        </div>
+        <div class="navbar-player-island__meta">
+          <div class="navbar-player-island__name">{{ islandDisplayName }}</div>
+          <div class="navbar-player-island__title">{{ islandDisplayTitle }}</div>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="navbar-player-island__follow"
+        :class="{ 'is-followed': islandIsFollowed }"
+        @click="toggleIslandFollow"
+      >
+        {{ islandIsFollowed ? '取关' : '关注' }}
+      </button>
+      <button
+        type="button"
+        class="navbar-player-island__expand"
+        @click="requestExpandDanmu"
+      >
+        <ChevronDown :size="14" />
+      </button>
+    </div>
+
     <div class="nav-actions" :class="{ 'nav-actions--windows': shouldShowWindowsControls }" data-tauri-drag-region>
       <div class="search-container" ref="searchContainerRef" data-tauri-drag-region="false">
           <div class="search-shell" :class="{ focused: isSearchFocused }">
@@ -52,6 +100,7 @@
               @focus="handleFocus"
               @blur="handleBlur"
               @input="handleSearch"
+              @keydown.enter.prevent="handleSearchButtonClick"
             />
             <button
               v-if="searchQuery"
@@ -62,6 +111,15 @@
               @click="resetSearchState"
             >
               <X :size="14" />
+            </button>
+            <button
+              type="button"
+              class="search-submit-btn"
+              data-tauri-drag-region="false"
+              aria-label="搜索"
+              @click="handleSearchButtonClick"
+            >
+              <Search :size="15" />
             </button>
           </div>
 
@@ -83,27 +141,12 @@
                 <div class="result-main-content">
                   <div class="result-line-1-main">
                     <span class="result-name" :title="anchor.userName">{{ anchor.userName }}</span>
-                    <span class="live-status-badge styled-badge" :class="{ 'is-live': anchor.liveStatus }">
-                      {{ anchor.liveStatus ? '直播' : '未播' }}
-                    </span>
                   </div>
                   <div class="result-line-2-main">
                     <span class="result-room-title" :title="anchor.roomTitle || '暂无标题'">{{ anchor.roomTitle || '暂无标题' }}</span>
-                    <span class="result-roomid styled-badge">{{ anchor.webId || anchor.roomId }}</span>
                   </div>
                 </div>
-
-                <div class="result-meta-right">
-                  <span
-                    class="platform-tag styled-badge"
-                    :class="[
-                      anchor.platform.toLowerCase(),
-                      { douyu: anchor.platform === Platform.DOUYU, douyin: anchor.platform === Platform.DOUYIN, huya: anchor.platform === Platform.HUYA }
-                    ]"
-                  >
-                    {{ anchor.platform === Platform.DOUYU ? '斗鱼' : (anchor.platform === Platform.DOUYIN ? '抖音' : (anchor.platform === Platform.HUYA ? '虎牙' : anchor.platform)) }}
-                  </span>
-                </div>
+                <span class="live-status-dot" :class="{ 'is-live': anchor.liveStatus }" aria-hidden="true"></span>
               </div>
             </div>
 
@@ -150,11 +193,13 @@ import { platform as detectPlatform } from '@tauri-apps/plugin-os';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { useRoute } from 'vue-router';
-import { Github, Moon, Sun, X } from 'lucide-vue-next';
+import { ChevronDown, Github, Moon, Search, Sun, X } from 'lucide-vue-next';
+import { motion } from 'motion-v';
 import WindowsWindowControls from '../components/window-controls/WindowsWindowControls.vue';
 import { useThemeStore } from '../stores/theme';
 import { Platform } from '../platforms/common/types';
 import type { Platform as UiPlatform } from './types';
+import { useFollowStore } from '../store/followStore';
 
 interface DouyinApiStreamInfo {
   title?: string | null;
@@ -224,16 +269,24 @@ const searchResults = ref<SearchResultItem[]>([]);
 const showResults = ref(false);
 const searchError = ref<string | null>(null);
 const isLoadingSearch = ref(false);
+const hasCompletedSearch = ref(false);
 const isSearchFocused = ref(false);
 const searchContainerRef = ref<HTMLElement | null>(null);
 const platformTabsRef = ref<HTMLElement | null>(null);
 const platformItemRefs = new Map<UiPlatform | 'all', HTMLElement>();
 const highlight = ref({ left: 0, width: 0, opacity: 0 });
-const highlightStyles = computed(() => ({
-  transform: `translateX(${highlight.value.left}px)`,
-  width: `${highlight.value.width}px`,
+const highlightMotion = computed(() => ({
+  x: highlight.value.left,
+  width: highlight.value.width,
   opacity: highlight.value.opacity,
+  scale: highlight.value.opacity ? 1 : 0.96,
 }));
+const platformHighlightTransition = {
+  type: 'spring' as const,
+  stiffness: 430,
+  damping: 24,
+  mass: 0.72,
+};
 
 const themeStore = useThemeStore();
 const effectiveTheme = computed(() => themeStore.getEffectiveTheme());
@@ -247,6 +300,56 @@ const isWindowsPlatform = computed(() => {
   return name.startsWith('win');
 });
 const shouldShowWindowsControls = computed(() => isWindowsPlatform.value);
+const isPlayerRoute = computed(() => {
+  const name = route.name as string | undefined;
+  return name === 'douyuPlayer' || name === 'douyinPlayer' || name === 'huyaPlayer' || name === 'bilibiliPlayer';
+});
+const PLAYER_ISLAND_EVENT = 'dtv-player-island-state';
+const PLAYER_ISLAND_EXPAND_EVENT = 'dtv-player-island-expand';
+const playerIsland = ref({
+  visible: false,
+  anchorName: '',
+  title: '',
+  avatarUrl: null as string | null,
+  roomId: null as string | null,
+  platform: null as Platform | null,
+});
+const followStore = useFollowStore();
+const islandIsFollowed = computed(() => {
+  if (!playerIsland.value.platform || !playerIsland.value.roomId) {
+    return false;
+  }
+  return followStore.isFollowed(playerIsland.value.platform, playerIsland.value.roomId);
+});
+const islandDisplayName = computed(() => {
+  if (playerIsland.value.anchorName) {
+    return playerIsland.value.anchorName;
+  }
+  if (playerIsland.value.roomId) {
+    return `主播${playerIsland.value.roomId}`;
+  }
+  return '主播';
+});
+const islandDisplayTitle = computed(() => {
+  if (playerIsland.value.title) {
+    return playerIsland.value.title;
+  }
+  if (playerIsland.value.roomId) {
+    return `房间 ${playerIsland.value.roomId}`;
+  }
+  return '直播间';
+});
+const resolveIslandFallback = (platform?: Platform | null, roomId?: string | null) => {
+  if (!platform || !roomId) {
+    return null;
+  }
+  return followStore.getFollowedStreamers.find((item) => {
+    if (item.platform !== platform) {
+      return false;
+    }
+    return item.id === roomId || item.currentRoomId === roomId;
+  }) ?? null;
+};
 
 const proxyBase = ref<string | null>(null);
 const ensureProxyStarted = async () => {
@@ -303,18 +406,27 @@ onMounted(async () => {
       const ua = navigator.userAgent.toLowerCase();
       if (ua.includes('windows')) {
         detectedPlatform.value = 'windows';
+      } else if (ua.includes('mac')) {
+        detectedPlatform.value = 'darwin';
       }
     }
   }
 });
 
-onMounted(() => {
-  if (isMacPreview && typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-platform', 'darwin');
-  } else if (typeof document !== 'undefined') {
-    document.documentElement.removeAttribute('data-platform');
-  }
-});
+watch(
+  detectedPlatform,
+  (platformName) => {
+    if (typeof document === 'undefined') return;
+    const normalized = platformName?.toLowerCase() ?? '';
+    const isMac = isMacPreview || normalized.startsWith('darwin') || normalized.startsWith('mac');
+    if (isMac) {
+      document.documentElement.setAttribute('data-platform', 'darwin');
+    } else {
+      document.documentElement.removeAttribute('data-platform');
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(async () => {
   try {
@@ -381,6 +493,62 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleDocumentMouseDown);
 });
 
+const handlePlayerIslandEvent = (event: Event) => {
+  const customEvent = event as CustomEvent<{ visible?: boolean; anchorName?: string; title?: string; avatarUrl?: string | null; roomId?: string | null; platform?: Platform | null }>;
+  const detail = customEvent.detail;
+  if (!detail) {
+    return;
+  }
+  playerIsland.value = {
+    visible: !!detail.visible,
+    roomId: detail.roomId ?? null,
+    platform: detail.platform ?? null,
+    anchorName: detail.anchorName ?? resolveIslandFallback(detail.platform, detail.roomId)?.nickname ?? '',
+    title: detail.title ?? resolveIslandFallback(detail.platform, detail.roomId)?.roomTitle ?? '',
+    avatarUrl: detail.avatarUrl ?? resolveIslandFallback(detail.platform, detail.roomId)?.avatarUrl ?? null,
+  };
+};
+
+const requestExpandDanmu = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(PLAYER_ISLAND_EXPAND_EVENT));
+};
+
+const toggleIslandFollow = () => {
+  const platform = playerIsland.value.platform;
+  const roomId = playerIsland.value.roomId;
+  if (!platform || !roomId) {
+    return;
+  }
+  if (followStore.isFollowed(platform, roomId)) {
+    followStore.unfollowStreamer(platform, roomId);
+    return;
+  }
+  followStore.followStreamer({
+    platform,
+    id: roomId,
+    nickname: playerIsland.value.anchorName || roomId,
+    avatarUrl: playerIsland.value.avatarUrl || '',
+    roomTitle: playerIsland.value.title || '',
+    currentRoomId: roomId,
+    liveStatus: 'UNKNOWN',
+  });
+};
+
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener(PLAYER_ISLAND_EVENT, handlePlayerIslandEvent as EventListener);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener(PLAYER_ISLAND_EVENT, handlePlayerIslandEvent as EventListener);
+  }
+});
+
 const toggleTheme = () => {
   emit('theme-toggle');
 };
@@ -411,6 +579,7 @@ const resetSearchState = () => {
   searchError.value = null;
   showResults.value = false;
   isLoadingSearch.value = false;
+  hasCompletedSearch.value = false;
 };
 
 const handleSearch = () => {
@@ -419,11 +588,33 @@ const handleSearch = () => {
   }
   searchError.value = null;
   isLoadingSearch.value = true;
+  hasCompletedSearch.value = false;
+  showResults.value = false;
   emit('search-change', searchQuery.value);
 
   searchTimeout = window.setTimeout(() => {
     performSearchBasedOnInput();
   }, 500);
+};
+
+const handleSearchButtonClick = async () => {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+    searchTimeout = null;
+  }
+  searchError.value = null;
+  emit('search-change', searchQuery.value);
+  if (!trimmedQuery.value) {
+    searchResults.value = [];
+    showResults.value = false;
+    isLoadingSearch.value = false;
+    hasCompletedSearch.value = false;
+    return;
+  }
+  isLoadingSearch.value = true;
+  hasCompletedSearch.value = false;
+  showResults.value = false;
+  await performSearchBasedOnInput();
 };
 
 const performSearchBasedOnInput = async () => {
@@ -432,6 +623,7 @@ const performSearchBasedOnInput = async () => {
     searchResults.value = [];
     showResults.value = false;
     isLoadingSearch.value = false;
+    hasCompletedSearch.value = false;
     return;
   }
   searchQuery.value = query;
@@ -478,6 +670,7 @@ const performDouyinIdSearch = async (userInputRoomId: string) => {
     isLoadingSearch.value = false;
     searchError.value = '搜索失败，请重试。';
   }
+  hasCompletedSearch.value = true;
   showResults.value = true;
 };
 
@@ -504,6 +697,7 @@ const performHuyaSearch = async (keyword: string) => {
     isLoadingSearch.value = false;
     searchError.value = '搜索失败，请重试。';
   }
+  hasCompletedSearch.value = true;
   showResults.value = true;
 };
 
@@ -540,6 +734,7 @@ const performDouyuSearch = async (keyword: string) => {
     isLoadingSearch.value = false;
     searchError.value = '搜索失败，请重试。';
   }
+  hasCompletedSearch.value = true;
   showResults.value = true;
 };
 
@@ -570,13 +765,14 @@ const performBilibiliSearch = async (keyword: string) => {
     searchError.value = '搜索失败，请重试。';
   } finally {
     isLoadingSearch.value = false;
+    hasCompletedSearch.value = true;
     showResults.value = true;
   }
 };
 
 const handleFocus = () => {
   isSearchFocused.value = true;
-  showResults.value = true;
+  showResults.value = hasCompletedSearch.value && !isLoadingSearch.value && !!trimmedQuery.value;
 };
 
 const handleBlur = () => {
@@ -612,15 +808,364 @@ const tryEnterRoom = (roomId: string) => {
 };
 </script>
 <style scoped>
+.navbar {
+  background: var(--bg-primary);
+}
+
+.navbar.navbar--dark {
+  background: transparent;
+  border-bottom: none !important;
+}
+
+.navbar.navbar--dark .platform-tabs,
+.navbar.navbar--dark .search-shell,
+.navbar.navbar--dark .nav-icon-btn {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-style: solid !important;
+  border-width: 0.6px 0.24px !important;
+  border-color: rgba(233, 241, 246, 0.42) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    0 4px 10px rgba(0, 0, 0, 0.12) !important;
+}
+
+.navbar.navbar--dark .platform-highlight {
+  background: rgba(145, 154, 160, 0.28) !important;
+  background-image: none !important;
+  border-style: solid !important;
+  border-width: 0.55px 0.24px !important;
+  border-color: rgba(237, 244, 248, 0.34) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 1px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.navbar.navbar--dark .search-shell.focused {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 6px 14px rgba(0, 0, 0, 0.14) !important;
+}
+
+.navbar.navbar--dark .platform-tab:hover:not(.active),
+.navbar.navbar--dark .search-clear-btn:hover,
+.navbar.navbar--dark .nav-icon-btn:hover,
+.navbar.navbar--dark .nav-icon-btn:active {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+.navbar.navbar--dark .nav-icon-btn:hover {
+  border-color: rgba(240, 246, 250, 0.52) !important;
+}
+
 .platform-tabs-wrap {
   flex: 0 0 auto;
+}
+
+.navbar-player-island {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: min(320px, calc(100% - 640px));
+  min-height: 42px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 999px;
+  background: rgba(16, 16, 18, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  box-shadow: none;
+}
+
+.navbar-player-island__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.navbar-player-island__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.navbar-player-island__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f8fafc;
+  background: rgba(148, 163, 184, 0.2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.navbar-player-island__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.navbar-player-island__live {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 14px;
+  height: 14px;
+  margin-right: 1px;
+  flex: 0 0 auto;
+}
+
+.live-wave {
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  transform-origin: bottom center;
+  animation: island-live-wave 1s ease-in-out infinite;
+}
+
+.live-wave.wave-1 {
+  height: 6px;
+  animation-delay: 0s;
+}
+
+.live-wave.wave-2 {
+  height: 10px;
+  animation-delay: 0.12s;
+}
+
+.live-wave.wave-3 {
+  height: 7px;
+  animation-delay: 0.24s;
+}
+
+@keyframes island-live-wave {
+  0%, 100% {
+    transform: scaleY(0.55);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1.05);
+    opacity: 1;
+  }
+}
+
+.navbar-player-island__name {
+  color: rgba(248, 250, 252, 0.98);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.navbar-player-island__title {
+  color: rgba(203, 213, 225, 0.9);
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.navbar-player-island__expand {
+  border: none;
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: rgba(248, 250, 252, 0.96);
+  background: rgba(148, 163, 184, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex: 0 0 auto;
+}
+
+.navbar-player-island__expand:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.navbar-player-island__follow {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.96);
+  background: linear-gradient(180deg, rgba(120, 133, 147, 0.32), rgba(92, 104, 118, 0.26));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  flex: 0 0 auto;
+}
+
+.navbar-player-island__follow:hover {
+  background: linear-gradient(180deg, rgba(134, 147, 161, 0.38), rgba(104, 117, 132, 0.3));
+  transform: translateY(-1px);
+}
+
+.navbar-player-island__follow.is-followed {
+  border-color: rgba(110, 231, 183, 0.28);
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.34), rgba(16, 185, 129, 0.28));
+  color: rgba(236, 253, 245, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+}
+
+:global([data-theme='light']) .navbar-player-island,
+:global(html[data-theme='light']) .navbar-player-island,
+:global(:root[data-theme='light']) .navbar-player-island {
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+:global([data-theme='light']) .navbar-player-island__avatar,
+:global(html[data-theme='light']) .navbar-player-island__avatar,
+:global(:root[data-theme='light']) .navbar-player-island__avatar {
+  border-color: rgba(148, 163, 184, 0.38);
+}
+
+:global([data-theme='light']) .navbar-player-island__avatar--fallback,
+:global(html[data-theme='light']) .navbar-player-island__avatar--fallback,
+:global(:root[data-theme='light']) .navbar-player-island__avatar--fallback {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+:global([data-theme='light']) .navbar-player-island__name,
+:global(html[data-theme='light']) .navbar-player-island__name,
+:global(:root[data-theme='light']) .navbar-player-island__name {
+  color: #111827;
+}
+
+:global([data-theme='light']) .navbar-player-island__title,
+:global(html[data-theme='light']) .navbar-player-island__title,
+:global(:root[data-theme='light']) .navbar-player-island__title {
+  color: #475569;
+}
+
+:global([data-theme='light']) .live-wave,
+:global(html[data-theme='light']) .live-wave,
+:global(:root[data-theme='light']) .live-wave {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+:global([data-theme='light']) .navbar-player-island__expand,
+:global(html[data-theme='light']) .navbar-player-island__expand,
+:global(:root[data-theme='light']) .navbar-player-island__expand,
+:global([data-theme='light']) .navbar-player-island__follow,
+:global(html[data-theme='light']) .navbar-player-island__follow,
+:global(:root[data-theme='light']) .navbar-player-island__follow {
+  color: #0f172a;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.98), rgba(226, 232, 240, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.24);
+}
+
+:global([data-theme='light']) .navbar-player-island__follow.is-followed,
+:global(html[data-theme='light']) .navbar-player-island__follow.is-followed,
+:global(:root[data-theme='light']) .navbar-player-island__follow.is-followed {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: linear-gradient(180deg, rgba(209, 250, 229, 0.98), rgba(167, 243, 208, 0.9));
+  color: #065f46;
+}
+
+:global([data-theme='dark']) .navbar-player-island,
+:global(html[data-theme='dark']) .navbar-player-island,
+:global(:root[data-theme='dark']) .navbar-player-island {
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: none;
+}
+
+:global([data-theme='dark']) .navbar-player-island__avatar,
+:global(html[data-theme='dark']) .navbar-player-island__avatar,
+:global(:root[data-theme='dark']) .navbar-player-island__avatar {
+  border-color: rgba(148, 163, 184, 0.38);
+}
+
+:global([data-theme='dark']) .navbar-player-island__avatar--fallback,
+:global(html[data-theme='dark']) .navbar-player-island__avatar--fallback,
+:global(:root[data-theme='dark']) .navbar-player-island__avatar--fallback {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+:global([data-theme='dark']) .navbar-player-island__name,
+:global(html[data-theme='dark']) .navbar-player-island__name,
+:global(:root[data-theme='dark']) .navbar-player-island__name {
+  color: #111827;
+}
+
+:global([data-theme='dark']) .live-wave,
+:global(html[data-theme='dark']) .live-wave,
+:global(:root[data-theme='dark']) .live-wave {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+:global([data-theme='dark']) .navbar-player-island__title,
+:global(html[data-theme='dark']) .navbar-player-island__title,
+:global(:root[data-theme='dark']) .navbar-player-island__title {
+  color: #475569;
+}
+
+:global([data-theme='dark']) .navbar-player-island__expand,
+:global(html[data-theme='dark']) .navbar-player-island__expand,
+:global(:root[data-theme='dark']) .navbar-player-island__expand {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+:global([data-theme='dark']) .navbar-player-island__expand:hover,
+:global(html[data-theme='dark']) .navbar-player-island__expand:hover,
+:global(:root[data-theme='dark']) .navbar-player-island__expand:hover {
+  background: rgba(148, 163, 184, 0.34);
+}
+
+:global([data-theme='dark']) .navbar-player-island__follow,
+:global(html[data-theme='dark']) .navbar-player-island__follow,
+:global(:root[data-theme='dark']) .navbar-player-island__follow {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+:global([data-theme='dark']) .navbar-player-island__follow:hover,
+:global(html[data-theme='dark']) .navbar-player-island__follow:hover,
+:global(:root[data-theme='dark']) .navbar-player-island__follow:hover {
+  background: rgba(148, 163, 184, 0.34);
 }
 
 .mac-controls {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding-left: 4px;
+  padding-left: 2px;
 }
 
 .mac-dot {
@@ -644,30 +1189,57 @@ const tryEnterRoom = (roomId: string) => {
 
 .platform-tabs {
   display: flex;
-  background-color: rgba(0, 0, 0, 0.04);
-  padding: 4px;
-  border-radius: var(--radius-md);
+  background: rgba(250, 252, 255, 0.62);
+  border-style: solid;
+  border-color: #ffffff;
+  border-width: 0.8px 0.35px;
+  padding: 5px;
+  border-radius: 22px;
   position: relative;
   overflow: hidden;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+}
+
+:global([data-theme='light']) .platform-tabs,
+:global(html[data-theme='light']) .platform-tabs,
+:global(:root[data-theme='light']) .platform-tabs {
+  border-width: 1px 0.6px !important;
+  border-color: #ffffff !important;
+  outline: 0.5px solid rgba(148, 163, 184, 0.35) !important;
+  outline-offset: -1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92),
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.05) !important;
 }
 
 :global([data-theme='dark']) .platform-tabs {
-  background-color: rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none !important;
 }
 
 .platform-tab {
-  padding: 8px 20px;
-  border-radius: var(--radius-sm);
+  padding: 9px 20px;
+  border-radius: 16px;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
   position: relative;
   z-index: 2;
-  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s ease;
+  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s ease, background-color 0.2s ease;
 }
 
 .platform-tab:hover:not(.active) {
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: rgba(15, 23, 42, 0.06);
 }
 
 .platform-tab.active {
@@ -675,14 +1247,32 @@ const tryEnterRoom = (roomId: string) => {
   color: var(--text-primary);
 }
 
+:global([data-theme='dark']) .platform-tab {
+  color: #cbd5e1;
+}
+
+:global([data-theme='dark']) .platform-tab:hover:not(.active) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+:global([data-theme='dark']) .platform-tab.active {
+  color: #f8fafc;
+}
+
 .platform-highlight {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 5px;
+  bottom: 5px;
   left: 0;
-  background-color: var(--platform-active-bg);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  border-style: solid;
+  border-color: #ffffff;
+  border-width: 0.75px 0.35px;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 3px 6px rgba(15, 23, 42, 0.05);
   transition:
     transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
     width 240ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -690,9 +1280,30 @@ const tryEnterRoom = (roomId: string) => {
   z-index: 1;
 }
 
+:global([data-theme='light']) .platform-highlight,
+:global(html[data-theme='light']) .platform-highlight,
+:global(:root[data-theme='light']) .platform-highlight {
+  border-width: 1px 0.6px !important;
+  border-color: #ffffff !important;
+  outline: 0.5px solid rgba(148, 163, 184, 0.3) !important;
+  outline-offset: -1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 3px 6px rgba(15, 23, 42, 0.05) !important;
+}
+
+:global([data-theme='dark']) .platform-highlight {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: none !important;
+}
+
 .search-container {
   position: relative;
-  width: min(360px, 36vw);
+  width: min(240px, 24vw);
 }
 
 .search-shell {
@@ -704,28 +1315,72 @@ const tryEnterRoom = (roomId: string) => {
   z-index: 10;
   transform: scale(1);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  background-color: rgba(0, 0, 0, 0.04);
-  border-radius: var(--radius-lg);
+  background: rgba(250, 252, 255, 0.62);
+  border-style: solid;
+  border-color: #ffffff;
+  border-width: 0.8px 0.35px;
+  border-radius: 22px;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+}
+
+:global([data-theme='light']) .search-shell,
+:global(html[data-theme='light']) .search-shell,
+:global(:root[data-theme='light']) .search-shell {
+  border-width: 1px 0.6px !important;
+  border-color: #ffffff !important;
+  outline: 0.5px solid rgba(148, 163, 184, 0.35) !important;
+  outline-offset: -1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92),
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.05) !important;
 }
 
 :global([data-theme='dark']) .search-shell {
-  background-color: rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none !important;
 }
 
 .search-shell.focused {
-  transform: scale(1.02);
-  box-shadow: var(--shadow-lg);
+  transform: scale(1.01);
+  box-shadow:
+    0 1px 4px rgba(15, 23, 42, 0.06),
+    0 5px 10px rgba(15, 23, 42, 0.08);
+}
+
+:global([data-theme='dark']) .search-shell.focused {
+  box-shadow: none !important;
 }
 
 .search-input {
-  width: 100%;
-  padding: 12px 16px;
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 12px 10px 12px 16px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  border-radius: 22px;
   font-size: 0.9rem;
   color: var(--text-primary);
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+:global([data-theme='dark']) .search-input {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
 .search-clear-btn {
@@ -746,6 +1401,38 @@ const tryEnterRoom = (roomId: string) => {
 .search-clear-btn:hover {
   color: var(--accent);
   background: rgba(0, 0, 0, 0.06);
+}
+
+:global([data-theme='dark']) .search-clear-btn:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+.search-submit-btn {
+  background: transparent;
+  border: none;
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.search-submit-btn:hover {
+  color: var(--accent);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:global([data-theme='dark']) .search-submit-btn:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .search-results-wrapper {
@@ -777,11 +1464,12 @@ const tryEnterRoom = (roomId: string) => {
 .search-result-item {
   display: flex;
   align-items: center;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s ease;
-  gap: 10px;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .search-result-item:hover {
@@ -796,8 +1484,8 @@ const tryEnterRoom = (roomId: string) => {
 }
 
 .result-avatar {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--tertiary-bg);
@@ -814,22 +1502,48 @@ const tryEnterRoom = (roomId: string) => {
 .result-main-content {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .result-line-1-main {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 1px;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .result-name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--primary-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.live-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9ca3af;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.live-status-dot.is-live {
+  background: #22c55e;
+}
+
+.result-line-2-main {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 :global([data-theme='dark']) .result-name,
@@ -839,7 +1553,9 @@ const tryEnterRoom = (roomId: string) => {
 }
 
 .result-room-title {
-  font-size: 12px;
+  display: block;
+  max-width: 100%;
+  font-size: 11px;
   color: var(--secondary-text);
   white-space: nowrap;
   overflow: hidden;
@@ -948,35 +1664,53 @@ const tryEnterRoom = (roomId: string) => {
 }
 
 .nav-icon-btn {
-  padding: 12px;
-  border-radius: var(--radius-md);
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 999px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.04);
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  background: rgba(250, 252, 255, 0.62);
+  border-style: solid;
+  border-color: #ffffff;
+  border-width: 0.8px 0.35px;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 :global([data-theme='dark']) .nav-icon-btn {
-  background-color: rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none !important;
 }
 
 .nav-icon-btn:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-  transform: scale(1.05);
+  background-color: rgba(255, 255, 255, 0.92);
+  transform: translateY(-1px);
 }
 
 :global([data-theme='dark']) .nav-icon-btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 :global([data-theme='dark']) .nav-icon-btn:active {
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .nav-icon-btn:active {
-  transform: scale(0.95);
+  transform: translateY(0);
 }
 
 .mini-spinner {
@@ -1008,8 +1742,13 @@ const tryEnterRoom = (roomId: string) => {
 
 .github-btn {
   position: relative;
-  padding-top: 10px;
-  padding-right: 14px;
+  padding: 0;
+  transform: translateY(-2px);
+  overflow: hidden;
+}
+
+.github-btn :deep(svg) {
+  transform: translateY(-4px);
 }
 
 .github-badge {
@@ -1017,28 +1756,36 @@ const tryEnterRoom = (roomId: string) => {
   left: 0;
   right: 0;
   bottom: 0;
-  transform: none;
-  padding: 2px 8px 3px;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: 0.2px;
+  height: 17px;
+  padding: 5px 0 0;
+  border-radius: 0 0 999px 999px;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.18px;
   text-transform: uppercase;
-  color: rgba(17, 24, 39, 0.68);
-  background: rgba(17, 24, 39, 0.08);
+  color: rgba(20, 28, 36, 0.8);
+  background: linear-gradient(180deg, rgba(245, 250, 253, 0.98), rgba(229, 236, 242, 0.94));
   border: none;
-  box-shadow: none;
-  opacity: 0.95;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(129, 141, 155, 0.24);
+  text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.5);
+  opacity: 0.99;
   text-align: center;
+  pointer-events: none;
+  z-index: 2;
 }
 
 :global([data-theme='dark']) .github-badge {
-  color: rgba(226, 232, 240, 0.9);
-  background: rgba(226, 232, 240, 0.08);
-  border-top-color: rgba(226, 232, 240, 0.2);
-  border-bottom-color: rgba(226, 232, 240, 0.2);
-  opacity: 0.9;
+  color: #ffffff;
+  background: linear-gradient(180deg, rgba(74, 84, 90, 0.34), rgba(56, 65, 71, 0.44));
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  text-shadow: 0 0.5px 0 rgba(0, 0, 0, 0.28);
+  opacity: 0.92;
 }
 
 </style>

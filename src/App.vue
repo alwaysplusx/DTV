@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Navbar from './layout/Navbar.vue';
 import Sidebar from './layout/Sidebar.vue';
@@ -48,8 +48,6 @@ import { useThemeStore } from './stores/theme';
 import { useFollowStore } from './store/followStore';
 import { Platform } from './platforms/common/types';
 import type { FollowedStreamer } from './platforms/common/types';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { UnlistenFn } from '@tauri-apps/api/event';
 import './styles/global.css';
 
 const router = useRouter();
@@ -58,9 +56,6 @@ const followStore = useFollowStore();
 
 const isSidebarCollapsed = ref(false);
 const isPlayerFullscreen = ref(false);
-const isWindowMaximized = ref(false);
-const currentWindow = typeof window !== 'undefined' ? getCurrentWindow() : null;
-let unlistenResize: UnlistenFn | null = null;
 
 const themeStore = useThemeStore();
 const theme = computed(() => themeStore.getEffectiveTheme());
@@ -78,36 +73,6 @@ const activePlatform = computed<UiPlatform>(() => routePlatform.value);
 
 const followedStreamers = computed<FollowedStreamer[]>(() => followStore.getFollowedStreamers);
 
-const syncWindowMaximizedState = async () => {
-  if (!currentWindow) {
-    return;
-  }
-  try {
-    isWindowMaximized.value = await currentWindow.isMaximized();
-  } catch (error) {
-    console.error('[App] Failed to query maximized state', error);
-  }
-};
-
-onMounted(async () => {
-  if (!currentWindow) {
-    return;
-  }
-  await syncWindowMaximizedState();
-  try {
-    unlistenResize = await currentWindow.onResized(syncWindowMaximizedState);
-  } catch (error) {
-    console.error('[App] Failed to listen for resize events', error);
-  }
-});
-
-onBeforeUnmount(async () => {
-  if (unlistenResize) {
-    await unlistenResize();
-    unlistenResize = null;
-  }
-});
-
 const isPlayerRoute = computed(() => {
   const name = route.name as string | undefined;
   return (
@@ -119,7 +84,7 @@ const isPlayerRoute = computed(() => {
 });
 
 const shouldHidePlayerChrome = computed(() => (
-  isPlayerRoute.value && (isPlayerFullscreen.value || isWindowMaximized.value)
+  isPlayerRoute.value && isPlayerFullscreen.value
 ));
 
 const toggleSidebar = () => {
@@ -205,7 +170,7 @@ const handleFullscreenChange = (isFullscreen: boolean) => {
 .app-body {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 10px 0;
+  padding: 6px 10px 0 0;
   position: relative;
 }
 
