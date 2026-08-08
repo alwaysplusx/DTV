@@ -86,7 +86,7 @@
   --border-width: 1px;
 
   --sidebar-width: 240px;
-  --sidebar-collapsed-width: 72px;
+  --sidebar-collapsed-width: 0px;
   --navbar-height: 72px;
 
   /* Legacy variable bridge */

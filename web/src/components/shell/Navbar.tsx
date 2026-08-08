@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
-import { ChevronDown, ExternalLink, LayoutGrid, MonitorSmartphone, Moon, Search, Sun, ThumbsUp, X } from "lucide-react";
+import { ChevronDown, ExternalLink, LayoutGrid, MonitorSmartphone, Search, ThumbsUp, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -74,12 +74,10 @@ function WinCaptionCloseIcon() {
 export function Navbar({
   theme,
   activePlatform,
-  onThemeToggle,
   onPlatformChange
 }: {
   theme: "light" | "dark";
   activePlatform: UiPlatform;
-  onThemeToggle: () => void;
   onPlatformChange: (p: UiPlatform) => void;
 }) {
   const pathname = usePathname();
@@ -690,17 +688,6 @@ export function Navbar({
           onClick={() => setLanSyncOpen(true)}
         >
           <MonitorSmartphone size={18} />
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={`${styles.themeToggle} ${theme === "dark" ? styles.themeToggleDark : styles.themeToggleLight}`}
-          onClick={onThemeToggle}
-          aria-label={theme === "dark" ? "切换到浅色" : "切换到深色"}
-        >
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
         {isWindows ? (

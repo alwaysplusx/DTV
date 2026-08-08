@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import { Spinner } from "@heroui/react";
@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { effectiveTheme, toggleLightDark } = useTheme();
+  const { effectiveTheme } = useTheme();
   const { isFullscreen: isPlayerFullscreen } = usePlayerUi();
   const playerOverlay = usePlayerOverlay();
   const custom = useCustomCategories();
@@ -54,7 +54,41 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   const normalizedPathname = useMemo(() => normalizePathname(pathname ?? "/"), [pathname]);
   const activePlatform = useMemo(() => getActivePlatform(normalizedPathname), [normalizedPathname]);
-  const [isSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // 水合完成后从 localStorage 读取折叠偏好
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("dtv_sidebar_collapsed") === "1") {
+        setIsSidebarCollapsed(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // 进入全屏自动折叠关注栏，退出全屏自动展开
+  const prevFullscreenRef = useRef(isPlayerFullscreen);
+  useEffect(() => {
+    if (isPlayerFullscreen && !prevFullscreenRef.current) {
+      setIsSidebarCollapsed(true);
+    } else if (!isPlayerFullscreen && prevFullscreenRef.current) {
+      setIsSidebarCollapsed(false);
+    }
+    prevFullscreenRef.current = isPlayerFullscreen;
+  }, [isPlayerFullscreen]);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("dtv_sidebar_collapsed", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const [optimisticPlatform, setOptimisticPlatform] = useState<UiPlatform>(activePlatform);
 
   const playerActive = isPlayerPath(normalizedPathname) || playerOverlay.isOpen;
@@ -132,16 +166,16 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const showRoutePending = optimisticPlatform !== activePlatform || isRoutePending;
 
   return (
-    <div className={styles.appShell}>
-      {!shouldHidePlayerChrome ? (
-        <Sidebar isCollapsed={isSidebarCollapsed} />
-      ) : null}
+    <div
+      className={styles.appShell}
+      style={{ paddingLeft: isSidebarCollapsed ? "var(--sidebar-collapsed-width)" : "var(--sidebar-width)" }}
+    >
+      <Sidebar isCollapsed={isSidebarCollapsed} isPlayerActive={playerActive} onToggle={toggleSidebar} />
       <div className={styles.appMain}>
         {!shouldHidePlayerChrome ? (
           <Navbar
             theme={effectiveTheme}
             activePlatform={optimisticPlatform}
-            onThemeToggle={toggleLightDark}
             onPlatformChange={navigatePlatform}
           />
         ) : null}
