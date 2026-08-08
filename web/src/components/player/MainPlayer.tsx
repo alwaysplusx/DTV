@@ -223,6 +223,7 @@ export function MainPlayer({
   const danmuKeywordBlockPluginRef = useRef<any>(null);
   const qualityPluginRef = useRef<any>(null);
   const linePluginRef = useRef<any>(null);
+  const mirrorFlipPluginRef = useRef<any>(null);
   const hevcBrandPatchedRef = useRef(false);
 
   const [isLoadingStream, setIsLoadingStream] = useState(false);
@@ -305,6 +306,11 @@ export function MainPlayer({
   }, []);
 
   const [chromeVisible, setChromeVisible] = useState(true);
+  const [isMirrorFlipped, setIsMirrorFlipped] = useState(false);
+  const isMirrorFlippedRef = useRef(isMirrorFlipped);
+  useEffect(() => {
+    isMirrorFlippedRef.current = isMirrorFlipped;
+  }, [isMirrorFlipped]);
   const hideChromeTimerRef = useRef<number | null>(null);
   const moveRafRef = useRef(0);
 
@@ -609,6 +615,7 @@ export function MainPlayer({
     danmuSettingsPluginRef.current = null;
     qualityPluginRef.current = null;
     linePluginRef.current = null;
+    mirrorFlipPluginRef.current = null;
 
     setIsFullScreen(false);
   }, []);
@@ -782,7 +789,7 @@ export function MainPlayer({
       const FlvPlugin: any = (flvMod as any).default ?? flvMod;
       const HlsPlugin: any = (hlsMod as any).default ?? hlsMod;
       const { applyDanmuOverlayPreferences, createDanmuOverlay, syncDanmuEnabledState } = overlayMod as any;
-      const { DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, QualityControl, RefreshControl, VolumeControl } =
+      const { DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, MirrorFlipControl, QualityControl, RefreshControl, VolumeControl } =
         pluginsMod as any;
 
       const playerOptions: any = {
@@ -993,6 +1000,13 @@ export function MainPlayer({
           setCurrentLine(lineKey);
           persistLinePreference(platform, lineKey);
         }
+      });
+
+      mirrorFlipPluginRef.current = player.registerPlugin?.(MirrorFlipControl, {
+        position: POSITIONS.CONTROLS_RIGHT,
+        index: 4.1,
+        getState: () => isMirrorFlippedRef.current,
+        onToggle: (flipped: boolean) => setIsMirrorFlipped(flipped)
       });
 
       arrangeControlClusters(player);
@@ -1304,6 +1318,14 @@ export function MainPlayer({
   }, [currentLine, currentQuality, lineOptions]);
 
   useEffect(() => {
+    try {
+      mirrorFlipPluginRef.current?.setState?.(isMirrorFlipped);
+    } catch {
+      // ignore
+    }
+  }, [isMirrorFlipped]);
+
+  useEffect(() => {
     // quality / line change triggers reload (debounced a bit)
     if (!qualityReloadArmedRef.current) {
       qualityReloadArmedRef.current = true;
@@ -1387,7 +1409,7 @@ export function MainPlayer({
       <div className="player-layout">
         <div className="main-content">
           <div className="player-container player-container--solo">
-            <div className="video-container">
+            <div className={`video-container${isMirrorFlipped ? " is-mirror-flipped" : ""}`}>
               <div className="player-topbar">
                 <div className="player-topbar-left">
                   <button

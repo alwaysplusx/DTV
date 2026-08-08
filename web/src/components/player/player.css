@@ -295,6 +295,7 @@
 .xgplayer-line-control,
 .xgplayer-danmu-toggle,
 .xgplayer-danmu-settings,
+.xgplayer-mirror-flip,
 .xgplayer-volume-control {
   display: inline-flex;
   align-items: center;
@@ -314,6 +315,7 @@
 .xgplayer-line-control:hover,
 .xgplayer-danmu-toggle:hover,
 .xgplayer-danmu-settings:hover,
+.xgplayer-mirror-flip:hover,
 .xgplayer-volume-control:hover {
   color: #ffffff;
 }
@@ -333,6 +335,7 @@
 .xgplayer-line-control svg,
 .xgplayer-danmu-toggle svg,
 .xgplayer-danmu-settings svg,
+.xgplayer-mirror-flip svg,
 .xgplayer-volume-control svg {
   pointer-events: none;
 }
@@ -2430,4 +2433,17 @@ video.xgplayer-video {
 
 :root[data-theme="light"] .streamer-info-offline {
   border-bottom: 1px solid var(--border-color-light, #e0e0e0);
+}
+
+/* Mirror flip */
+.xgplayer-mirror-flip.is-active {
+  color: #0a84ff;
+}
+
+.xgplayer-mirror-flip.is-active:hover {
+  color: #3d9fff;
+}
+
+.video-container.is-mirror-flipped video {
+  transform: scaleX(-1);
 }
