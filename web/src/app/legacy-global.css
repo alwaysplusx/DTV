@@ -357,3 +357,38 @@ ul {
   font-size: 0.72rem;
   color: var(--error-color, #f87171);
 }
+
+/* macOS 交通灯右侧置顶药丸 —— AppShell 常驻渲染，故样式必须在全局表里
+   （player.css 仅在 MainPlayer 挂载时加载，首页/非播放页不会加载，导致药丸无样式、不可见）。
+   无背景；未激活灰色倾斜细描线、已激活蓝色垂直实心；无 CSS filter、无光晕，保持小尺寸清晰。 */
+.player-pin-pill {
+  position: fixed;
+  left: 80px;
+  top: 28px;
+  width: 16px;
+  height: 16px;
+  z-index: 10001;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(185, 185, 192, 0.95);
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.2s ease;
+}
+
+.player-pin-pill.is-active {
+  color: #0a84ff;
+}
+
+.player-pin-pill.is-active:hover {
+  color: #3d9fff;
+}
+
+.player-pin-pill svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}

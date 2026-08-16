@@ -35,6 +35,7 @@ import { getBilibiliStreamConfig } from "@/platforms/bilibili/playerHelper";
 import { useImageProxy } from "@/hooks/useImageProxy";
 import { useFollow, type FollowedStreamer, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
+import { PinIcon } from "@/components/player/PinIcon";
 
 declare global {
   // Used to guard against React StrictMode(dev) mount/unmount cycles accidentally stopping a newer player session.
@@ -199,7 +200,7 @@ export function MainPlayer({
 }) {
   const router = useRouter();
   const follow = useFollow();
-  const { setIsland, clearIsland, setFullscreen } = usePlayerUi();
+  const { setIsland, clearIsland, setFullscreen, isAlwaysOnTop, toggleAlwaysOnTop } = usePlayerUi();
   const { ensureProxyStarted, getAvatarSrc } = useImageProxy();
   const pageRef = useRef<HTMLDivElement | null>(null);
   const dragStartArmedRef = useRef(false);
@@ -1368,6 +1369,18 @@ export function MainPlayer({
     >
       {isWindows ? (
         <div className="player-window-controls" data-tauri-drag-region="false" aria-label="窗口控制">
+          {/* 窗口置顶 —— Win/Linux：右上，激活蓝色（状态消费自 PlayerUiProvider，会话内持久） */}
+          <button
+            type="button"
+            className={`window-btn window-btn--pin${isAlwaysOnTop ? " is-active" : ""}`}
+            data-tauri-drag-region="false"
+            aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+            aria-pressed={isAlwaysOnTop}
+            title={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+            onClick={toggleAlwaysOnTop}
+          >
+            <PinIcon filled={isAlwaysOnTop} />
+          </button>
           <button type="button" className="window-btn" data-tauri-drag-region="false" aria-label="最小化" onClick={() => void minimizeWindow()}>
             <svg viewBox="0 0 24 24" fill="none">
               <path d="M6 12h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

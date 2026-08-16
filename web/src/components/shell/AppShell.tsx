@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import { Spinner } from "@heroui/react";
+import { createPortal } from "react-dom";
+
 
 import styles from "./AppShell.module.css";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -12,6 +14,7 @@ import { useTheme } from "@/state/theme/ThemeProvider";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { useCustomCategories } from "@/state/customCategories/CustomCategoriesProvider";
 import { PlayerOverlayHost, PlayerOverlayProvider, usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
+import { PinIcon } from "@/components/player/PinIcon";
 
 type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom";
 
@@ -46,10 +49,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { effectiveTheme } = useTheme();
-  const { isFullscreen: isPlayerFullscreen } = usePlayerUi();
+  const { isFullscreen: isPlayerFullscreen, isAlwaysOnTop, toggleAlwaysOnTop } = usePlayerUi();
   const playerOverlay = usePlayerOverlay();
   const custom = useCustomCategories();
   const [hydrated, setHydrated] = useState(false);
+  const [isWindows, setIsWindows] = useState(false);
   const [isRoutePending, startRouteTransition] = useTransition();
 
   const normalizedPathname = useMemo(() => normalizePathname(pathname ?? "/"), [pathname]);
@@ -98,6 +102,24 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const osMod: any = await import("@tauri-apps/plugin-os");
+        const p = typeof osMod?.platform === "function" ? await osMod.platform() : "";
+        if (cancelled) return;
+        const plat = String(p).toLowerCase();
+        setIsWindows(plat === "windows" || plat === "linux");
+      } catch {
+        // non-tauri env: ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -164,6 +186,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [custom.entries.length, custom.hydrated, hydrated, router]);
 
   const showRoutePending = optimisticPlatform !== activePlatform || isRoutePending;
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   return (
     <div
@@ -171,6 +194,28 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       style={{ paddingLeft: isSidebarCollapsed ? "var(--sidebar-collapsed-width)" : "var(--sidebar-width)" }}
     >
       <Sidebar isCollapsed={isSidebarCollapsed} isPlayerActive={playerActive} onToggle={toggleSidebar} />
+
+      {/* macOS 交通灯旁常驻药丸：应用级窗口置顶，全视图常驻（不随 idle 隐藏）。
+          portal 到 body + z-index:10001，与侧边栏把手同一模式，逃逸所有层叠上下文，
+          稳居侧边栏(100)/播放覆盖层(500)/CSS 全屏播放器(9999) 之上。
+          hydrated gate 避免 SSR/客户端 portalTarget 不一致的 hydration mismatch。 */}
+      {hydrated && portalTarget && !isWindows
+        ? createPortal(
+            <button
+              type="button"
+              className={`player-pin-pill${isAlwaysOnTop ? " is-active" : ""}`}
+              data-tauri-drag-region="false"
+              aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+              aria-pressed={isAlwaysOnTop}
+              title={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+              onClick={toggleAlwaysOnTop}
+            >
+              <PinIcon filled={isAlwaysOnTop} />
+            </button>,
+            portalTarget
+          )
+        : null}
+
       <div className={styles.appMain}>
         {!shouldHidePlayerChrome ? (
           <Navbar

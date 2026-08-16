@@ -1671,6 +1671,23 @@ html.web-fs-active .danmu-panel {
   display: block;
 }
 
+/* 窗口置顶 —— Win/Linux：右上，激活蓝色（状态消费自 PlayerUiProvider，会话内持久） */
+.player-window-controls .window-btn--pin {
+  color: rgba(185, 185, 192, 0.9);
+}
+
+.player-window-controls .window-btn--pin:hover {
+  color: rgba(225, 225, 232, 0.95);
+}
+
+.player-window-controls .window-btn--pin.is-active {
+  color: #0a84ff;
+}
+
+.player-window-controls .window-btn--pin.is-active:hover {
+  color: #3d9fff;
+}
+
 .player-window-controls .window-btn--close:hover {
   background: #e81123;
   color: #ffffff;
