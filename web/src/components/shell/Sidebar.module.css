@@ -67,12 +67,12 @@
   flex-direction: column;
 }
 
-/* 底部工具条：主题切换随关注栏一起折叠/展开 */
+/* 底部工具条：左下角设置入口 + 右侧主题切换，随关注栏一起折叠/展开 */
 .sidebarFooter {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 12px;
   border-top: 1px solid var(--border);
 }

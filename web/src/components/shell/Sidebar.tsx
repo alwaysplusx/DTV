@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Moon, Sun } from "lucide-react";
 import styles from "./Sidebar.module.css";
 import { FollowsList } from "@/components/follows/FollowsList";
+import { SettingsMenu } from "@/components/shell/SettingsMenu";
 import { useTheme } from "@/state/theme/ThemeProvider";
 
 export function Sidebar({
@@ -50,6 +51,7 @@ export function Sidebar({
         <div className={styles.sidebarBody}>
           <FollowsList />
           <div className={styles.sidebarFooter}>
+            <SettingsMenu />
             <button
               type="button"
               className={`${styles.themeToggle} ${isDark ? styles.themeToggleDark : styles.themeToggleLight}`}

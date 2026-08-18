@@ -2,12 +2,10 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
-import { ChevronDown, ExternalLink, LayoutGrid, MonitorSmartphone, Search, ThumbsUp, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, Search, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { invoke } from "@tauri-apps/api/core";
 
 import styles from "./Navbar.module.css";
-import { LanSyncModal } from "./LanSyncModal";
 import { searchAnchors, type SearchAnchorResult, type SearchPlatform } from "@/services/search";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { useFollow, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
@@ -17,16 +15,6 @@ import { useCustomCategories } from "@/state/customCategories/CustomCategoriesPr
 import { usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
 
 type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom";
-
-type VersionInfo = {
-  version: string;
-  title?: string;
-  notes?: string[];
-  url?: string;
-  published_at?: string;
-};
-
-const GITHUB_RELEASES_URL = "https://github.com/chen-zeong/DTV/releases";
 
 const basePlatforms: Array<{ id: Exclude<UiPlatform, "custom">; name: string }> = [
   { id: "douyu", name: "斗鱼" },
@@ -83,13 +71,6 @@ export function Navbar({
   const pathname = usePathname();
   const [isWindows, setIsWindows] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
-
-  const [donateOpen, setDonateOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
-  const [lanSyncOpen, setLanSyncOpen] = useState(false);
-  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
-  const [hasUpdate, setHasUpdate] = useState(false);
-  const [localVersion, setLocalVersion] = useState<string>("");
 
   const playerUi = usePlayerUi();
   const playerOverlay = usePlayerOverlay();
@@ -154,38 +135,6 @@ export function Navbar({
     window.requestAnimationFrame(() => {
       searchInputRef.current?.focus();
     });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      // 版本检查不是关键功能：失败不重试、不报错、不提示
-      try {
-        const res = await invoke<any>("check_version_cmd");
-        if (cancelled) return;
-        const local = typeof res?.local_version === "string" ? res.local_version : "";
-        setLocalVersion(local);
-        const remote = res?.remote;
-        if (remote && typeof remote.version === "string" && remote.version.trim()) {
-          const info: VersionInfo = {
-            version: remote.version,
-            title: typeof remote.title === "string" ? remote.title : undefined,
-            notes: Array.isArray(remote.notes) ? remote.notes.filter((x: any) => typeof x === "string") : undefined,
-            url: typeof remote.url === "string" ? remote.url : undefined,
-            published_at: typeof remote.published_at === "string" ? remote.published_at : undefined
-          };
-          setVersionInfo(info);
-        }
-        setHasUpdate(!!res?.has_update);
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const searchPlatform: SearchPlatform | null = useMemo(() => {
@@ -332,45 +281,6 @@ export function Navbar({
     const r = el.getBoundingClientRect();
     setHighlight({ width: r.width, x: r.left - c.left, opacity: 1 });
   }, [activePlatform]);
-
-  const openExternal = useCallback(async (url: string) => {
-    const raw = String(url || "").trim();
-    if (!raw) return;
-
-    const normalizedUrl = (() => {
-      try {
-        return new URL(raw).toString();
-      } catch {
-        // allow passing github.com/xxx
-        try {
-          return new URL(`https://${raw}`).toString();
-        } catch {
-          return raw;
-        }
-      }
-    })();
-
-    try {
-      await invoke("open_in_default_browser", { url: normalizedUrl });
-      return;
-    } catch {
-      // ignore
-    }
-    try {
-      const opener: any = await import("@tauri-apps/plugin-opener");
-      if (typeof opener?.open === "function") {
-        await opener.open(normalizedUrl);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    try {
-      window.open(normalizedUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore
-    }
-  }, []);
 
   useLayoutEffect(() => {
     updateHighlight();
@@ -653,43 +563,6 @@ export function Navbar({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.versionBtn}
-          title="版本信息"
-          aria-label="版本信息"
-          onClick={() => setUpdateOpen(true)}
-        >
-          <span className={styles.versionText}>v{localVersion || "?"}</span>
-          {hasUpdate ? <span className={styles.badgeNew}>NEW</span> : null}
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.navIconBtn}
-          title="打赏支持"
-          aria-label="打赏"
-          onClick={() => setDonateOpen(true)}
-        >
-          <ThumbsUp size={18} />
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.navIconBtn}
-          title="Data Sync"
-          aria-label="Data Sync"
-          onClick={() => setLanSyncOpen(true)}
-        >
-          <MonitorSmartphone size={18} />
-        </button>
-
         {isWindows ? (
           <div className={styles.winControls} data-tauri-drag-region="false" aria-label="Window controls">
             <button type="button" className={styles.winBtn} title="最小化" onClick={() => void minimizeWindow()}>
@@ -704,99 +577,6 @@ export function Navbar({
           </div>
         ) : null}
       </div>
-
-      <AnimatePresence>
-        {donateOpen ? (
-          <m.div
-            className={styles.overlayBackdrop}
-            // eslint-disable-next-line react/no-unknown-property
-            data-tauri-drag-region="false"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={() => setDonateOpen(false)}
-          >
-            <m.div
-              className={styles.overlayCard}
-              initial={{ opacity: 0, y: 10, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className={styles.overlayHeader}>
-                <div className={styles.overlayTitle}>打赏支持</div>
-                <button type="button" className={styles.overlayClose} onClick={() => setDonateOpen(false)} aria-label="关闭">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className={styles.overlayBody}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className={styles.qrImage} src="/wechat.jpg" alt="微信赞赏码" />
-              </div>
-            </m.div>
-          </m.div>
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {updateOpen ? (
-          <m.div
-            className={styles.overlayBackdrop}
-            // eslint-disable-next-line react/no-unknown-property
-            data-tauri-drag-region="false"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={() => setUpdateOpen(false)}
-          >
-            <m.div
-              className={styles.overlayCard}
-              initial={{ opacity: 0, y: 10, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className={styles.overlayHeader}>
-                <div className={styles.overlayTitle}>
-                  {hasUpdate && versionInfo ? versionInfo.title || `发现新版本 v${versionInfo.version}` : "版本信息"}
-                </div>
-                <button type="button" className={styles.overlayClose} onClick={() => setUpdateOpen(false)} aria-label="关闭">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className={styles.overlayBody}>
-                <div className={styles.updateMeta}>
-                  <span>当前版本：v{localVersion || "?"}</span>
-                  {hasUpdate && versionInfo ? <span>最新版本：v{versionInfo.version}</span> : <span>已是最新</span>}
-                  {hasUpdate && versionInfo?.published_at ? <span>发布日期：{versionInfo.published_at}</span> : null}
-                </div>
-                {hasUpdate && versionInfo?.notes?.length ? (
-                  <ul className={styles.updateNotes}>
-                    {versionInfo.notes.map((n) => (
-                      <li key={n}>{n}</li>
-                    ))}
-                  </ul>
-                ) : null}
-
-                <div className={styles.updateActions}>
-                  <button
-                    type="button"
-                    className={styles.primaryBtn}
-                    onClick={() => void openExternal((versionInfo?.url || GITHUB_RELEASES_URL) as string)}
-                  >
-                    <ExternalLink size={16} />
-                    {hasUpdate ? "打开下载页" : "打开 GitHub"}
-                  </button>
-                </div>
-              </div>
-            </m.div>
-          </m.div>
-        ) : null}
-      </AnimatePresence>
-
-      <LanSyncModal open={lanSyncOpen} onClose={() => setLanSyncOpen(false)} appVersion={localVersion} />
     </nav>
   );
 }
