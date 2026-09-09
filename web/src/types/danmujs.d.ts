@@ -6,6 +6,9 @@ declare module 'danmu.js' {
     play(): void;
     stop(): void;
     sendComment(comment: any): void;
+    on?(event: string, handler: (data?: any) => void): void;
+    freezeComment?(id: any): void;
+    restartComment?(id: any): void;
     updateComments?(comments: any[]): void;
     setAllDuration?(mode: string, duration: number): void;
     setPlayRate?(mode: string, rate: number): void;

@@ -5,16 +5,16 @@ pub struct BilibiliState {
     pub w_webid: Arc<Mutex<Option<String>>>,
 }
 
-#[tauri::command]
 pub async fn generate_bilibili_w_webid(
     state: tauri::State<'_, BilibiliState>,
 ) -> Result<String, String> {
     let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
     let url = "https://live.bilibili.com/lol";
-    println!("[Bilibili] Generating w_webid: GET {}", url);
-    println!(
+    log::info!("[Bilibili] Generating w_webid: GET {}", url);
+    log::info!(
         "[Bilibili] Headers: User-Agent={}, Referer={} ",
-        ua, "https://www.bilibili.com/"
+        ua,
+        "https://www.bilibili.com/"
     );
 
     let client = reqwest::Client::builder()
@@ -96,7 +96,7 @@ pub async fn generate_bilibili_w_webid(
     }
 
     let w_webid = access_id.ok_or_else(|| "Failed to extract w_webid (access_id)".to_string())?;
-    println!("[Bilibili] w_webid extracted: {}", w_webid);
+    log::info!("[Bilibili] w_webid extracted: {}", w_webid);
     {
         let mut guard = state.w_webid.lock().unwrap();
         *guard = Some(w_webid.clone());

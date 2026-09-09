@@ -17,7 +17,9 @@ pub struct DouyinRoomData {
 
 // 直接从返回的 stream_data 中补全 ORIGIN，不依赖 HTML 解析，贴近 douyin_rust 实现。
 fn merge_origin_stream(room: &mut Value) {
-    let Some(stream_url) = room.get_mut("stream_url") else { return };
+    let Some(stream_url) = room.get_mut("stream_url") else {
+        return;
+    };
     let live_core_sdk_data = stream_url.get("live_core_sdk_data");
     if live_core_sdk_data.is_none() {
         return;
@@ -47,7 +49,9 @@ fn merge_origin_stream(room: &mut Value) {
         .get("data")
         .and_then(|d| d.get("origin"))
         .and_then(|o| o.get("main"));
-    let Some(origin_main) = origin_main else { return };
+    let Some(origin_main) = origin_main else {
+        return;
+    };
 
     let origin_codec = origin_main
         .get("sdk_params")
@@ -78,9 +82,9 @@ fn merge_origin_stream(room: &mut Value) {
             _ => {
                 let mut new_map = serde_json::Map::new();
                 new_map.insert("ORIGIN".to_string(), Value::String(hls_origin));
-                stream_url.as_object_mut().map(|obj| {
-                    obj.insert("hls_pull_url_map".to_string(), Value::Object(new_map))
-                });
+                stream_url
+                    .as_object_mut()
+                    .map(|obj| obj.insert("hls_pull_url_map".to_string(), Value::Object(new_map)));
             }
         }
     }
@@ -98,9 +102,9 @@ fn merge_origin_stream(room: &mut Value) {
             _ => {
                 let mut new_map = serde_json::Map::new();
                 new_map.insert("ORIGIN".to_string(), Value::String(flv_origin));
-                stream_url.as_object_mut().map(|obj| {
-                    obj.insert("flv_pull_url".to_string(), Value::Object(new_map))
-                });
+                stream_url
+                    .as_object_mut()
+                    .map(|obj| obj.insert("flv_pull_url".to_string(), Value::Object(new_map)));
             }
         }
     }
@@ -113,9 +117,17 @@ async fn fetch_room_from_api(
 ) -> Result<DouyinRoomData, String> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
-    headers.insert(REFERER, HeaderValue::from_str(&format!("https://live.douyin.com/{web_id}")).map_err(|e| format!("Invalid Referer: {e}"))?);
+    headers.insert(
+        REFERER,
+        HeaderValue::from_str(&format!("https://live.douyin.com/{web_id}"))
+            .map_err(|e| format!("Invalid Referer: {e}"))?,
+    );
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(COOKIE, HeaderValue::from_str(cookies.unwrap_or(DEFAULT_COOKIE)).map_err(|e| format!("Invalid cookie header value: {}", e))?);
+    headers.insert(
+        COOKIE,
+        HeaderValue::from_str(cookies.unwrap_or(DEFAULT_COOKIE))
+            .map_err(|e| format!("Invalid cookie header value: {}", e))?,
+    );
 
     let params = vec![
         ("aid", "6383"),
@@ -135,8 +147,7 @@ async fn fetch_room_from_api(
     let sign = generate_a_bogus(&query, DEFAULT_USER_AGENT);
     let api = format!(
         "https://live.douyin.com/webcast/room/web/enter/?{}&a_bogus={}",
-        query,
-        sign
+        query, sign
     );
     let json: Value = http_client
         .inner
@@ -191,10 +202,7 @@ pub fn normalize_douyin_live_id(id_or_url: &str) -> String {
                 .or_else(|| kv.strip_prefix("web_rid="))
                 .or_else(|| kv.strip_prefix("webId="))
             {
-                let cleaned = val
-                    .split(['&', '#'])
-                    .find(|s| !s.is_empty())
-                    .unwrap_or(val);
+                let cleaned = val.split(['&', '#']).find(|s| !s.is_empty()).unwrap_or(val);
                 if !cleaned.is_empty() {
                     return cleaned.to_string();
                 }
@@ -207,10 +215,7 @@ pub fn normalize_douyin_live_id(id_or_url: &str) -> String {
         let start = pos + "douyin.com/".len();
         let remainder = &trimmed[start..];
         let path_only = remainder.split(['?', '#']).next().unwrap_or(remainder);
-        if let Some(segment) = path_only
-            .rsplit('/')
-            .find(|segment| !segment.is_empty())
-        {
+        if let Some(segment) = path_only.rsplit('/').find(|segment| !segment.is_empty()) {
             return segment
                 .split(['?', '&', '#'])
                 .find(|s| !s.is_empty())

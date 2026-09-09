@@ -143,6 +143,73 @@ export class VolumeControl extends Plugin {
   }
 }
 
+export class MirrorFlipControl extends Plugin {
+  static override pluginName = 'mirrorFlip';
+  static override defaultConfig = {
+    position: POSITIONS.CONTROLS_RIGHT,
+    index: 4.1,
+    disable: false,
+    getState: (() => false) as () => boolean,
+    onToggle: (async (_value: boolean) => {}) as (value: boolean) => Promise<void> | void,
+  };
+
+  private handleClick: ((event: Event) => void) | null = null;
+  private isActive = false;
+
+  override afterCreate() {
+    if (this.config.disable) {
+      return;
+    }
+    this.isActive = typeof this.config.getState === 'function' ? !!this.config.getState() : false;
+    this.updateState();
+    this.handleClick = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.toggle();
+    };
+    this.bind(['click', 'touchend'], this.handleClick);
+  }
+
+  override destroy() {
+    if (this.handleClick) {
+      this.unbind(['click', 'touchend'], this.handleClick);
+      this.handleClick = null;
+    }
+  }
+
+  override render() {
+    if (this.config.disable) {
+      return '';
+    }
+    return `<xg-icon class="xgplayer-mirror-flip" title="镜像翻转" role="button" aria-pressed="${this.isActive}">
+      ${ICONS.flipHorizontal}
+    </xg-icon>`;
+  }
+
+  private toggle() {
+    this.isActive = !this.isActive;
+    this.updateState();
+    const callback = this.config.onToggle;
+    if (typeof callback === 'function') {
+      callback(this.isActive);
+    }
+  }
+
+  private updateState() {
+    const root = this.root as HTMLElement | null;
+    if (!root) {
+      return;
+    }
+    root.classList.toggle('is-active', this.isActive);
+    root.setAttribute('aria-pressed', this.isActive ? 'true' : 'false');
+  }
+
+  setState(isActive: boolean) {
+    this.isActive = isActive;
+    this.updateState();
+  }
+}
+
 export class RefreshControl extends Plugin {
   static override pluginName = 'refreshControl';
   static override defaultConfig = {

@@ -133,5 +133,9 @@ export interface LiveStreamInfo {
   normalized_room_id?: string | null;
   // 新增：抖音直播间的 web_rid（关注列表以 web_id 为主键）
   web_rid?: string | null;
+  // 新增：房间快照封面 URL（直播中为平台截帧）
+  cover_url?: string | null;
+  // 新增：观看人气展示串（已格式化如 "1.2万"）
+  viewer_count_str?: string | null;
 }
 // Potentially other platform-specific fields if not covered by StreamRoomDetails

@@ -19,86 +19,10 @@ enum ConnectionOutcome {
     Disconnected,
 }
 
-async fn fetch_huya_ids(room_id: &str) -> Result<(i64, i64), String> {
-    let url = format!(
-        "https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid={}&showSecret=1",
-        room_id
-    );
-    let client = reqwest::Client::builder()
-        .http1_only()
-        .connect_timeout(Duration::from_secs(15))
-        .no_proxy()
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(url)
-        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36")
-        .header("Accept", "*/*")
-        .header("Origin", "https://www.huya.com")
-        .header("Referer", "https://www.huya.com/")
-        .send().await.map_err(|e| e.to_string())?;
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-
-    let status = v.get("status").and_then(|x| x.as_i64()).unwrap_or(0);
-    if status != 200 {
-        return Err("房间未开播或无流信息，无法获取弹幕参数".to_string());
-    }
-
-    let data = v.get("data").ok_or_else(|| "缺少data".to_string())?;
-    let ayyuid = data
-        .get("profileInfo")
-        .and_then(|x| x.get("yyid"))
-        .and_then(|x| x.as_i64())
-        .unwrap_or(0);
-
-    let base_list = data
-        .get("stream")
-        .and_then(|x| x.get("baseSteamInfoList"))
-        .and_then(|x| x.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let top_sid = if let Some(first) = base_list.get(0) {
-        first
-            .get("lChannelId")
-            .and_then(|x| x.as_i64())
-            .unwrap_or(0)
-    } else {
-        0
-    };
-
-    if top_sid == 0 {
-        return Err("未找到频道ID，房间可能未开播".to_string());
-    }
-
-    debug!(
-        "[Huya Danmaku] fetch_huya_ids: room_id={} yyid={} topSid={}",
-        room_id, ayyuid, top_sid
-    );
-    Ok((ayyuid, top_sid))
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct HuyaJoinParams {
-    pub yyid: i64,
-    pub top_sid: i64,
-}
-
-#[tauri::command]
-pub async fn fetch_huya_join_params(room_id: String) -> Result<HuyaJoinParams, String> {
-    match fetch_huya_ids(&room_id).await {
-        Ok((ayyuid, top_sid)) => Ok(HuyaJoinParams {
-            yyid: ayyuid,
-            top_sid,
-        }),
-        Err(e) => Err(e),
-    }
-}
-
 #[tauri::command]
 pub async fn start_huya_danmaku_listener(
     payload: crate::platforms::common::GetStreamUrlPayload,
+    window: tauri::Window,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, crate::platforms::common::HuyaDanmakuState>,
 ) -> Result<(), String> {
@@ -108,29 +32,54 @@ pub async fn start_huya_danmaku_listener(
         room_id_or_url
     );
 
-    // 停止已有监听
-    let previous_tx = {
+    // 引用计数共享：同窗口重复 start 先释放旧引用（保持重启语义）；
+    // 跨窗口同房间复用现有连接，互不误停。
+    let (need_spawn, stale_tx) = {
         let mut lock = state.inner().0.lock().unwrap();
-        lock.take()
+        let stale_tx = crate::platforms::common::release_danmaku_room(
+            &mut lock,
+            &room_id_or_url,
+            window.label(),
+        );
+        let need_spawn = crate::platforms::common::acquire_danmaku_room(
+            &mut lock,
+            &room_id_or_url,
+            window.label(),
+        );
+        (need_spawn, stale_tx)
     };
-    if let Some(tx) = previous_tx {
+    if let Some(tx) = stale_tx {
         if tx.send(()).await.is_err() {
-            eprintln!("[Huya Danmaku] 旧任务关闭失败，可能已退出。");
+            log::error!("[Huya Danmaku] 旧任务关闭失败，可能已退出。");
         }
+    }
+    if !need_spawn {
+        info!("[Huya Danmaku] Reusing existing listener for room {}", room_id_or_url);
+        return Ok(());
     }
 
     // 创建新的关闭通道并保存到 State
     let (tx_shutdown, mut rx_shutdown) = tokio_mpsc::channel::<()>(1);
     {
         let mut lock = state.inner().0.lock().unwrap();
-        *lock = Some(tx_shutdown);
+        crate::platforms::common::register_danmaku_stop_tx(
+            &mut lock,
+            &room_id_or_url,
+            tx_shutdown.clone(),
+        );
     }
 
     let app_handle_clone = app_handle.clone();
     let room_id_clone = room_id_or_url.clone();
+    let state_for_cleanup = state.inner().clone();
+    let room_id_for_cleanup = room_id_or_url.clone();
+    let tx_for_guard = tx_shutdown.clone();
 
     tokio::spawn(async move {
-        debug!("[Huya Danmaku] spawned worker for room_id={}", room_id_clone);
+        debug!(
+            "[Huya Danmaku] spawned worker for room_id={}",
+            room_id_clone
+        );
 
         let mut backoff_secs = 1u64;
 
@@ -169,24 +118,22 @@ pub async fn start_huya_danmaku_listener(
                             Err(e) => return Err(anyhow::anyhow!(e)),
                         };
                         match m {
-                            WsMessage::Binary(bin) => {
-                                match decode_msg_tars(&bin)? {
-                                    Some((nick, text)) => {
-                                        let _ = app_handle_clone.emit(
-                                            "danmaku-message",
-                                            crate::platforms::common::DanmakuFrontendPayload {
-                                                room_id: room_id_clone.clone(),
-                                                user: nick,
-                                                content: text,
-                                                user_level: 0,
-                                                fans_club_level: 0,
-                                                color: None,
-                                            },
-                                        );
-                                    }
-                                    None => {}
+                            WsMessage::Binary(bin) => match decode_msg_tars(&bin)? {
+                                Some((nick, text)) => {
+                                    let _ = app_handle_clone.emit(
+                                        "danmaku-message",
+                                        crate::platforms::common::DanmakuFrontendPayload {
+                                            room_id: room_id_clone.clone(),
+                                            user: nick,
+                                            content: text,
+                                            user_level: 0,
+                                            fans_club_level: 0,
+                                            color: None,
+                                        },
+                                    );
                                 }
-                            }
+                                None => {}
+                            },
                             other => {
                                 debug!("[Huya Danmaku] non-binary ws message: {:?}", other);
                             }
@@ -232,6 +179,18 @@ pub async fn start_huya_danmaku_listener(
             }
             backoff_secs = (backoff_secs * 2).min(30);
         }
+
+        // 任务退出后兜底清理注册表（正常 stop 路径已被 release 移除）。
+        // 条目已换成新实例（same_channel 不符）时不动作，防误删。
+        let mut lock = state_for_cleanup.0.lock().unwrap();
+        let is_ours = lock
+            .get(&room_id_for_cleanup)
+            .and_then(|room| room.stop_tx.as_ref())
+            .map(|tx| tx.same_channel(&tx_for_guard))
+            .unwrap_or(false);
+        if is_ours {
+            lock.remove(&room_id_for_cleanup);
+        }
     });
 
     Ok(())
@@ -240,6 +199,7 @@ pub async fn start_huya_danmaku_listener(
 #[tauri::command]
 pub async fn stop_huya_danmaku_listener(
     room_id: String,
+    window: tauri::Window,
     state: tauri::State<'_, crate::platforms::common::HuyaDanmakuState>,
 ) -> Result<(), String> {
     debug!(
@@ -247,20 +207,24 @@ pub async fn stop_huya_danmaku_listener(
         room_id
     );
 
-    // 取出当前监听的停止信号发送器
-    let tx = {
+    // `room_id` 为空 = 停止该窗口全部；否则只减该窗口引用，归零才真停（跨窗口共享连接）。
+    let senders = {
         let mut lock = state.inner().0.lock().unwrap();
-        lock.take()
+        if room_id.is_empty() {
+            crate::platforms::common::release_all_danmaku_rooms(&mut lock, window.label())
+        } else {
+            crate::platforms::common::release_danmaku_room(&mut lock, &room_id, window.label())
+                .into_iter()
+                .collect()
+        }
     };
 
-    if let Some(tx) = tx {
+    for tx in senders {
         if let Err(_) = tx.send(()).await {
             warn!("[Huya Danmaku] 停止信号发送失败，监听器可能已经退出");
         } else {
             info!("[Huya Danmaku] 停止信号已发送给 room_id={}", room_id);
         }
-    } else {
-        debug!("[Huya Danmaku] 没有找到活跃的监听器需要停止");
     }
 
     Ok(())
@@ -506,4 +470,3 @@ fn decode_msg_tars(data: &[u8]) -> anyhow::Result<Option<(String, String)>> {
     }
     Ok(ret)
 }
-

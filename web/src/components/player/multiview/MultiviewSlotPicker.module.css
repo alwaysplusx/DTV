@@ -1,0 +1,203 @@
+.panel {
+  z-index: 10005;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+:global(:root[data-theme="dark"]) .panel {
+  background: rgba(20, 20, 22, 0.92);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.titleLabel {
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.titleName {
+  font-size: 13px;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.subtle {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.grid {
+  display: grid;
+  gap: 6px;
+}
+
+.cell {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 56px;
+  text-align: left;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+:global(:root[data-theme="dark"]) .cell {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.cell:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: rgba(34, 197, 94, 0.10);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cellFocus {
+  border-color: var(--accent);
+}
+
+.cellAudio {
+  border-color: var(--accent-hover);
+}
+
+.cellEmpty {
+  color: var(--text-secondary);
+  font-weight: var(--weight-bold);
+  font-size: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.cellEmptyInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  opacity: 0.7;
+}
+
+.cellFilled {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+:global(:root[data-theme="dark"]) .cellFilled {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:global(:root[data-theme="light"]) .cellFilled {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.cellFilledInner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  width: 100%;
+}
+
+.cellName {
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cellNameReplace {
+  color: var(--accent-hover);
+}
+
+.cellTargetTag {
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.cellAudioBadge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #062414;
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cancelBtn {
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.cancelBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}

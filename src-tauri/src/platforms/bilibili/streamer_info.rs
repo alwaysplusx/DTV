@@ -118,6 +118,8 @@ pub async fn fetch_bilibili_streamer_info(
             available_streams: None,
             normalized_room_id: None,
             web_rid: None,
+            cover_url: None,
+            viewer_count_str: None,
         });
     }
 
@@ -173,6 +175,8 @@ pub async fn fetch_bilibili_streamer_info(
             available_streams: None,
             normalized_room_id: None,
             web_rid: None,
+            cover_url: None,
+            viewer_count_str: None,
         });
     }
     let j: Value = serde_json::from_str(&text)
@@ -186,6 +190,13 @@ pub async fn fetch_bilibili_streamer_info(
     let anchor_name = base_info["uname"].as_str().map(|s| s.to_string());
     let avatar = base_info["face"].as_str().map(|s| s.to_string());
     let live_status = room_info["live_status"].as_i64().unwrap_or(0) as i32;
+    let cover = room_info["cover"]
+        .as_str()
+        .map(|s| s.to_string())
+        .or_else(|| room_info["system_cover"].as_str().map(|s| s.to_string()));
+    let viewer_count_str = data["watched_show"]["text_small"]
+        .as_str()
+        .map(|s| s.to_string());
 
     Ok(crate::platforms::common::LiveStreamInfo {
         title,
@@ -198,5 +209,7 @@ pub async fn fetch_bilibili_streamer_info(
         available_streams: None,
         normalized_room_id: None,
         web_rid: None,
+        cover_url: cover,
+        viewer_count_str,
     })
 }

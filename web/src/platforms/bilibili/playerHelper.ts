@@ -10,13 +10,15 @@ export async function getBilibiliStreamConfig(
   roomId: string,
   quality: string = '原画',
   cookie?: string,
-): Promise<{ streamUrl: string, streamType: string | undefined }> {
+  session?: string | null,
+): Promise<{ streamUrl: string, streamType: string | undefined, proxySession: string | null }> {
   if (!roomId) {
     throw new Error('房间ID未提供');
   }
   const payloadData = { args: { room_id_str: roomId } };
   // 若未显式传入 cookie，则尝试从 localStorage 读取，以确保最高画质可用
   const effectiveCookie = cookie ?? (typeof localStorage !== 'undefined' ? (localStorage.getItem('bilibili_cookie') || undefined) : undefined);
+  const sessionKey = session ?? null;
 
   const MAX_ATTEMPTS = 2; // 最多重试一次
   let result: LiveStreamInfo | null = null;
@@ -26,6 +28,7 @@ export async function getBilibiliStreamConfig(
         payload: payloadData,
         quality,
         cookie: effectiveCookie || null,
+        session: sessionKey,
       });
       result = fetched;
 
@@ -135,7 +138,7 @@ export async function getBilibiliStreamConfig(
     streamType = 'flv';
   }
 
-  return { streamUrl, streamType };
+  return { streamUrl, streamType, proxySession: sessionKey };
 }
 
 // 统一的 Rust 弹幕事件负载（与 Douyin/Douyu/Huya 保持一致）
@@ -186,6 +189,7 @@ export async function startBilibiliDanmakuListener(
           txt: frontendDanmaku.content,
           duration: commentOptions.duration ?? 12000,
           mode: commentOptions.mode ?? 'scroll',
+          sender: frontendDanmaku.nickname,
           style: {
             ...styleFromOptions,
             color: preferredColor,
@@ -212,6 +216,6 @@ export async function stopBilibiliDanmaku(currentUnlistenFn: (() => void) | null
     try { currentUnlistenFn(); } catch {}
   }
   try {
-    await invoke('stop_bilibili_danmaku_listener');
+    await invoke('stop_bilibili_danmaku_listener', { roomId: null });
   } catch {}
 }

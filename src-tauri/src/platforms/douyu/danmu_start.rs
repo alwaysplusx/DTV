@@ -2,7 +2,6 @@ use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use tauri::{Emitter, Window};
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::Message};
@@ -11,7 +10,7 @@ use url::Url;
 pub struct DanmakuClient {
     room_id: String,
     window: Window,
-    stop_signal_rx: oneshot::Receiver<()>,
+    stop_signal_rx: tokio::sync::mpsc::Receiver<()>,
 }
 
 enum ConnectionOutcome {
@@ -20,7 +19,11 @@ enum ConnectionOutcome {
 }
 
 impl DanmakuClient {
-    pub fn new(room_id: &str, window: Window, stop_signal_rx: oneshot::Receiver<()>) -> Self {
+    pub fn new(
+        room_id: &str,
+        window: Window,
+        stop_signal_rx: tokio::sync::mpsc::Receiver<()>,
+    ) -> Self {
         Self {
             room_id: room_id.to_string(),
             window,
@@ -46,7 +49,7 @@ impl DanmakuClient {
 
     async fn run_connection(
         &self,
-        stop_rx: &mut oneshot::Receiver<()>,
+        stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     ) -> Result<ConnectionOutcome, Box<dyn std::error::Error>> {
         let url = Url::parse("wss://danmuproxy.douyu.com:8506/")?;
         let mut request = url.into_client_request()?;
@@ -100,12 +103,24 @@ impl DanmakuClient {
         // Processing incoming messages
         loop {
             tokio::select! {
-                _ = &mut *stop_rx => {
-                    eprintln!("[Douyu Danmaku {}] Stop signal received, terminating listener.", room_id_clone);
+                _ = stop_rx.recv() => {
+                    log::error!("[Douyu Danmaku {}] Stop signal received, terminating listener.", room_id_clone);
                     send_task.abort();
                     return Ok(ConnectionOutcome::Stop);
                 }
-                msg_option = read.next() => {
+                msg_option = tokio::time::timeout(Duration::from_secs(150), read.next()) => {
+                    // 僵尸连接看门狗：服务端每 45s 应答一次 mrkl 心跳，150s 零下行视为连接已死
+                    let msg_option = match msg_option {
+                        Ok(option) => option,
+                        Err(_) => {
+                            log::error!(
+                                "[Douyu Danmaku {}] No inbound data for 150s, treating connection as dead.",
+                                room_id_clone
+                            );
+                            send_task.abort();
+                            return Ok(ConnectionOutcome::Disconnected);
+                        }
+                    };
                     match msg_option {
                         Some(Ok(Message::Binary(data))) => {
                             if data.len() < 13 {
@@ -184,7 +199,7 @@ impl DanmakuClient {
                             }
                         }
                         Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
-                            eprintln!("[Douyu Danmaku {}] Websocket closed or error, terminating listener.", room_id_clone);
+                            log::error!("[Douyu Danmaku {}] Websocket closed or error, terminating listener.", room_id_clone);
                             send_task.abort();
                             return Ok(ConnectionOutcome::Disconnected);
                         }
@@ -196,26 +211,30 @@ impl DanmakuClient {
     }
 
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut stop_rx = std::mem::replace(&mut self.stop_signal_rx, oneshot::channel().1);
+        let mut stop_rx = std::mem::replace(
+            &mut self.stop_signal_rx,
+            tokio::sync::mpsc::channel(1).1,
+        );
         let mut backoff_secs = 1u64;
 
         loop {
             let outcome = self.run_connection(&mut stop_rx).await?;
             match outcome {
                 ConnectionOutcome::Stop => {
-                    eprintln!("[Douyu Danmaku {}] Listener stopped.", self.room_id);
+                    log::error!("[Douyu Danmaku {}] Listener stopped.", self.room_id);
                     break;
                 }
                 ConnectionOutcome::Disconnected => {
-                    eprintln!(
+                    log::error!(
                         "[Douyu Danmaku {}] Disconnected, retrying in {}s.",
-                        self.room_id, backoff_secs
+                        self.room_id,
+                        backoff_secs
                     );
                     let sleep_fut = sleep(Duration::from_secs(backoff_secs));
                     tokio::select! {
                         _ = sleep_fut => {}
-                        _ = &mut stop_rx => {
-                            eprintln!("[Douyu Danmaku {}] Stop signal received during backoff.", self.room_id);
+                        _ = stop_rx.recv() => {
+                            log::error!("[Douyu Danmaku {}] Stop signal received during backoff.", self.room_id);
                             break;
                         }
                     }

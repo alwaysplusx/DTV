@@ -6,19 +6,12 @@
   "scripts": {
     "dev": "pnpm -C web dev",
     "build": "pnpm -C web build",
+    "build:mac": "CARGO_PROFILE_RELEASE_LTO=false tauri build",
     "preview": "pnpm -C web start",
     "tauri": "tauri"
   },
-  "dependencies": {
-    "@tauri-apps/api": "^2.7.0",
-    "@tauri-apps/plugin-opener": "^2.4.0",
-    "@tauri-apps/plugin-os": "^2.3.0",
-    "@tauri-apps/plugin-updater": "^2.3.0"
-  },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.7.0",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "@tauri-apps/cli": "^2.7.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

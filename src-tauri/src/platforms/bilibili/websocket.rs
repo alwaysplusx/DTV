@@ -24,7 +24,7 @@ pub fn is_debug_enabled() -> bool {
 macro_rules! ws_debug {
     ($($arg:tt)*) => {
         if crate::platforms::bilibili::websocket::is_debug_enabled() {
-            println!($($arg)*);
+            log::info!($($arg)*);
         }
     }
 }
@@ -37,6 +37,10 @@ pub struct BiliLiveClient {
     // Heartbeat scheduling
     last_heartbeat: Instant,
     heartbeat_interval: Duration,
+    // B站会对每条心跳应答 op=3 人气包；据此检测半开连接（本端无错误、对端已死）
+    last_inbound: Instant,
+    // 重连冷却，避免看门狗/读错误高频触发时疯狂建连
+    last_reconnect_at: Option<Instant>,
     // Pending messages parsed from current/previous frames
     pending: VecDeque<BiliMessage>,
 }
@@ -53,6 +57,8 @@ impl BiliLiveClient {
             host_list: v["host_list"].clone(),
             last_heartbeat: Instant::now(),
             heartbeat_interval: Duration::from_secs(30),
+            last_inbound: Instant::now(),
+            last_reconnect_at: None,
             pending: VecDeque::new(),
         }
     }
@@ -68,6 +74,8 @@ impl BiliLiveClient {
             host_list: v["host_list"].clone(),
             last_heartbeat: Instant::now(),
             heartbeat_interval: Duration::from_secs(30),
+            last_inbound: Instant::now(),
+            last_reconnect_at: None,
             pending: VecDeque::new(),
         }
     }
@@ -81,7 +89,10 @@ impl BiliLiveClient {
     pub fn send_heart_beat(&mut self) {
         let pkt = make_packet("{}", Operation::HEARTBEAT);
         ws_debug!("[websocket] sending heartbeat, len={}", pkt.len());
-        let _ = self.ws.send(Message::Binary(pkt));
+        if let Err(e) = self.ws.send(Message::Binary(pkt)) {
+            ws_debug!("[websocket] heartbeat send error: {:?}, reconnecting", e);
+            self.reconnect();
+        }
         // update heartbeat timestamp
         self.last_heartbeat = Instant::now();
     }
@@ -96,6 +107,12 @@ impl BiliLiveClient {
 
     // Try to reconnect using the cached host list, and re-authenticate
     fn reconnect(&mut self) {
+        if let Some(t) = self.last_reconnect_at {
+            if t.elapsed() < Duration::from_secs(5) {
+                return;
+            }
+        }
+        self.last_reconnect_at = Some(Instant::now());
         for attempt in 1..=2 {
             ws_debug!("[websocket] attempting reconnect (attempt {attempt}/2)...");
             match std::panic::catch_unwind({
@@ -104,6 +121,8 @@ impl BiliLiveClient {
             }) {
                 Ok(new_ws) => {
                     self.ws = new_ws;
+                    self.last_heartbeat = Instant::now();
+                    self.last_inbound = Instant::now();
                     ws_debug!(
                         "[websocket] reconnect successful on attempt {attempt}, resending auth"
                     );
@@ -236,12 +255,20 @@ impl BiliLiveClient {
         // ensure heartbeat keeps alive
         self.maybe_send_heartbeat();
 
+        // 半开连接看门狗：健康连接每隔一个心跳周期必有下行（op=3 应答），
+        // 连续 3 个周期零下行而本端又无错误，说明 TCP 已成僵尸，强制重连。
+        if self.last_inbound.elapsed() >= self.heartbeat_interval * 3 {
+            ws_debug!("[websocket] inbound silence watchdog tripped, forcing reconnect");
+            self.reconnect();
+        }
+
         let readable = self.ws.can_read();
         ws_debug!("[websocket] can_read={} ", readable);
         if self.ws.can_read() {
             let msg = self.ws.read();
             match msg {
                 Ok(m) => {
+                    self.last_inbound = Instant::now();
                     let res = m.into_data();
                     ws_debug!("[websocket] read frame bytes={} ", res.len());
                     if res.len() >= 16 {
@@ -301,32 +328,36 @@ pub fn gen_damu_list(list: &serde_json::Value) -> Vec<DanmuServer> {
     res
 }
 
-fn find_server(vd: Vec<DanmuServer>) -> (String, String, String) {
-    let (host, wss_port) = (vd.get(0).unwrap().host.clone(), vd.get(0).unwrap().wss_port);
-    ws_debug!(
-        "[websocket] choose server host={} wss_port={}",
-        host,
-        wss_port
-    );
-    (
-        host.clone(),
-        format!("{}:{}", host.clone(), wss_port),
-        format!("wss://{}:{}/sub", host, wss_port),
-    )
+fn try_connect_server(server: &DanmuServer) -> Result<WebSocket<TlsStream<TcpStream>>, String> {
+    let host = server.host.as_str();
+    let url = format!("{}:{}", host, server.wss_port);
+    let ws_url = format!("wss://{}:{}/sub", host, server.wss_port);
+    ws_debug!("[websocket] connecting tcp {} and ws {}", url, ws_url);
+    let connector: native_tls::TlsConnector =
+        native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
+    let stream: TcpStream = TcpStream::connect(&url).map_err(|e| e.to_string())?;
+    let stream: native_tls::TlsStream<TcpStream> =
+        connector.connect(host, stream).map_err(|e| e.to_string())?;
+    let (socket, _resp) = client(Url::parse(ws_url.as_str()).map_err(|e| e.to_string())?, stream)
+        .map_err(|e| e.to_string())?;
+    ws_debug!("[websocket] websocket handshake complete with {}", host);
+    Ok(socket)
 }
 
 pub fn connect(v: Value) -> WebSocket<TlsStream<TcpStream>> {
-    let danmu_server = gen_damu_list(&v);
-    let (host, url, ws_url) = find_server(danmu_server);
-    ws_debug!("[websocket] connecting tcp {} and ws {}", url, ws_url);
-    let connector: native_tls::TlsConnector = native_tls::TlsConnector::new().unwrap();
-    let stream: TcpStream = TcpStream::connect(url).unwrap();
-    let stream: native_tls::TlsStream<TcpStream> =
-        connector.connect(host.as_str(), stream).unwrap();
-    let (socket, _resp) =
-        client(Url::parse(ws_url.as_str()).unwrap(), stream).expect("Can't connect");
-    ws_debug!("[websocket] websocket handshake complete");
-    socket
+    // 依次尝试 host_list 中的服务器，单点故障不再导致永远连不上
+    let servers = gen_damu_list(&v);
+    let mut last_err = String::new();
+    for server in &servers {
+        match try_connect_server(server) {
+            Ok(ws) => return ws,
+            Err(e) => {
+                last_err = format!("{}:{}: {}", server.host, server.wss_port, e);
+                ws_debug!("[websocket] connect failed: {}", last_err);
+            }
+        }
+    }
+    panic!("all danmu servers failed, last error: {}", last_err)
 }
 
 pub enum Operation {

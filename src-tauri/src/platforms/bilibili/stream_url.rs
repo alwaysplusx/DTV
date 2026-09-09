@@ -14,6 +14,8 @@ pub async fn get_bilibili_live_stream_url_with_quality(
     payload: crate::platforms::common::GetStreamUrlPayload,
     quality: String,
     cookie: Option<String>,
+    // 多路代理 session（独立窗口/多屏隔离）；None/空 = 单实例默认 ""
+    session: Option<String>,
 ) -> Result<crate::platforms::common::LiveStreamInfo, String> {
     let room_id = payload.args.room_id_str.clone();
     if room_id.trim().is_empty() {
@@ -28,6 +30,8 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             available_streams: None,
             normalized_room_id: None,
             web_rid: None,
+            cover_url: None,
+            viewer_count_str: None,
         });
     }
 
@@ -46,14 +50,14 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             match HeaderValue::from_str(c_trimmed) {
                 Ok(val) => {
                     headers.insert(COOKIE, val);
-                    eprintln!("[Bilibili] Cookie header set (content hidden)");
+                    log::error!("[Bilibili] Cookie header set (content hidden)");
                 }
                 Err(err) => {
-                    eprintln!("[Bilibili] Invalid cookie header, skipping. Error: {}", err);
+                    log::error!("[Bilibili] Invalid cookie header, skipping. Error: {}", err);
                 }
             }
         } else {
-            eprintln!("[Bilibili] Cookie provided is empty after trimming, skipping insertion.");
+            log::error!("[Bilibili] Cookie provided is empty after trimming, skipping insertion.");
         }
     }
 
@@ -155,9 +159,9 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             .map(|(q, d)| format!("{}:{}", q, d))
             .collect::<Vec<_>>()
             .join(", ");
-        eprintln!("[Bilibili] qn_map for room {} => [{}]", room_id, qn_str);
+        log::error!("[Bilibili] qn_map for room {} => [{}]", room_id, qn_str);
     } else {
-        eprintln!("[Bilibili] qn_map is empty for room {}", room_id);
+        log::error!("[Bilibili] qn_map is empty for room {}", room_id);
     }
     if !accept_qn.is_empty() {
         let accept_str = accept_qn
@@ -165,7 +169,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             .map(|q| q.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        eprintln!("[Bilibili] accept_qn => [{}]", accept_str);
+        log::error!("[Bilibili] accept_qn => [{}]", accept_str);
     }
 
     // Choose qn by desired quality text（更严格的匹配与优先规则）
@@ -227,9 +231,11 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             .find(|(q, _)| *q == qn)
             .map(|(_, d)| d.clone())
     });
-    eprintln!(
+    log::error!(
         "[Bilibili] selected quality '{}' -> qn={:?}, desc={:?}",
-        quality, selected_qn, selected_desc
+        quality,
+        selected_qn,
+        selected_desc
     );
 
     // Determine live status from room_init
@@ -261,6 +267,8 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             available_streams: None,
             normalized_room_id: None,
             web_rid: None,
+            cover_url: None,
+            viewer_count_str: None,
         });
     }
 
@@ -354,13 +362,14 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             match client.get(candidate).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        eprintln!(
+                        log::error!(
                             "[Bilibili] Verified HLS candidate for room {} -> {}",
-                            room_id, candidate
+                            room_id,
+                            candidate
                         );
                         return Some(candidate.clone());
                     } else {
-                        eprintln!(
+                        log::error!(
                             "[Bilibili] HLS candidate returned status {} for room {} -> {}",
                             resp.status(),
                             room_id,
@@ -369,9 +378,11 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                     }
                 }
                 Err(err) => {
-                    eprintln!(
+                    log::error!(
                         "[Bilibili] Failed to probe HLS candidate for room {} -> {} ({})",
-                        room_id, candidate, err
+                        room_id,
+                        candidate,
+                        err
                     );
                 }
             }
@@ -395,18 +406,20 @@ pub async fn get_bilibili_live_stream_url_with_quality(
         variants_for_response = variants.clone();
 
         if let Some(flv_url) = flv_candidate {
-            eprintln!(
+            log::error!(
                 "[Bilibili] Attempt {} obtained FLV stream for room {}, stop retrying",
-                attempt_display, room_id
+                attempt_display,
+                room_id
             );
             selected_stream = Some(SelectedStream::Flv(flv_url));
             break;
         }
 
         if hls_candidates.is_empty() {
-            eprintln!(
+            log::error!(
                 "[Bilibili] Attempt {} returned no HLS candidates for room {}",
-                attempt_display, room_id
+                attempt_display,
+                room_id
             );
             if attempt == MAX_HLS_RETRY {
                 break;
@@ -419,9 +432,10 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             .partition(|url| url.contains("d1--cn"));
 
         if let Some(url) = verify_hls_candidates(&client, &room_id, &preferred_candidates).await {
-            eprintln!(
+            log::error!(
                 "[Bilibili] Selected HLS stream containing 'd1--cn' on attempt {} for room {}",
-                attempt_display, room_id
+                attempt_display,
+                room_id
             );
             selected_stream = Some(SelectedStream::Hls(url));
             break;
@@ -436,9 +450,10 @@ pub async fn get_bilibili_live_stream_url_with_quality(
 
         if attempt == MAX_HLS_RETRY {
             if let Some(url) = fallback_hls_url.clone() {
-                eprintln!(
+                log::error!(
                     "[Bilibili] Using non 'd1--cn' HLS stream after {} attempts for room {}",
-                    attempt_display, room_id
+                    attempt_display,
+                    room_id
                 );
                 selected_stream = Some(SelectedStream::Hls(url));
                 if let Some(fallback) = fallback_variants.clone() {
@@ -447,7 +462,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             } else if let Some(url) =
                 verify_hls_candidates(&client, &room_id, &other_candidates).await
             {
-                eprintln!(
+                log::error!(
                     "[Bilibili] Final attempt picked non 'd1--cn' HLS stream for room {}",
                     room_id
                 );
@@ -459,7 +474,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
 
     if selected_stream.is_none() {
         if let Some(url) = fallback_hls_url.clone() {
-            eprintln!(
+            log::error!(
                 "[Bilibili] Falling back to cached non 'd1--cn' HLS stream for room {}",
                 room_id
             );
@@ -484,22 +499,34 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 available_streams: Some(variants_for_response),
                 normalized_room_id: None,
                 web_rid: None,
+                cover_url: None,
+                viewer_count_str: None,
             });
         }
     };
 
+    // 多路代理 session（独立窗口/多屏隔离）；空 = 单实例默认 ""
+    let session_key = session.unwrap_or_default();
     match selected_stream {
         SelectedStream::Flv(real_url) => {
-            // FLV：写入到 Store 并启动代理
+            // FLV：写入到 Store（默认 session 兼容单屏 B 站；带 session 时多路隔离）并启动共享代理
             let proxied_url = {
                 {
                     let mut current_url_in_store = stream_url_store.url.lock().unwrap();
-                    *current_url_in_store = real_url.clone();
+                    current_url_in_store.insert(session_key.clone(), real_url.clone());
                 }
                 match start_proxy(app_handle, proxy_server_handle, stream_url_store).await {
-                    Ok(proxy) => Some(proxy),
+                    Ok(proxy) => Some(if session_key.is_empty() {
+                        proxy
+                    } else {
+                        format!(
+                            "{}/{}",
+                            proxy.trim_end_matches('/'),
+                            urlencode_path(&session_key)
+                        )
+                    }),
                     Err(e) => {
-                        eprintln!("[Bilibili] Failed to start proxy: {}", e);
+                        log::error!("[Bilibili] Failed to start proxy: {}", e);
                         None
                     }
                 }
@@ -522,20 +549,15 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 available_streams: Some(variants_for_response.clone()),
                 normalized_room_id: None,
                 web_rid: None,
+                cover_url: None,
+                viewer_count_str: None,
             })
         }
         SelectedStream::Hls(real_url) => {
-            // HLS：无需本地代理，若存在旧的 FLV 代理则关闭并清空存储
-            {
-                let handle_to_stop = { proxy_server_handle.0.lock().unwrap().take() };
-                if let Some(handle) = handle_to_stop {
-                    handle.stop(false).await;
-                    eprintln!("[Bilibili] Stopped existing FLV proxy before using HLS stream");
-                }
-            }
+            // HLS：无需本地代理，仅清空本 session 的 FLV 地址（服务器共享，其他 session 保留）
             {
                 let mut current_url_in_store = stream_url_store.url.lock().unwrap();
-                *current_url_in_store = String::new();
+                current_url_in_store.remove(&session_key);
             }
 
             Ok(crate::platforms::common::LiveStreamInfo {
@@ -549,7 +571,22 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 available_streams: Some(variants_for_response),
                 normalized_room_id: None,
                 web_rid: None,
+                cover_url: None,
+                viewer_count_str: None,
             })
         }
     }
+}
+
+fn urlencode_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }

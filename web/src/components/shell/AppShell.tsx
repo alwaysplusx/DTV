@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import { Spinner } from "@heroui/react";
+import { createPortal } from "react-dom";
+
 
 import styles from "./AppShell.module.css";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -12,8 +14,15 @@ import { useTheme } from "@/state/theme/ThemeProvider";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { useCustomCategories } from "@/state/customCategories/CustomCategoriesProvider";
 import { PlayerOverlayHost, PlayerOverlayProvider, usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
+import { MultiviewProvider } from "@/state/multiview/MultiviewProvider";
+import { VolumeToastProvider } from "@/state/volumeToast/VolumeToastProvider";
+import { VolumeToastHost } from "@/components/player/VolumeToast";
+import { PinIcon } from "@/components/player/PinIcon";
+import { useLiveNotifications } from "@/hooks/useLiveNotifications";
+import { FollowRefreshProvider } from "@/state/follow/FollowRefreshProvider";
+import { useFollow } from "@/state/follow/FollowProvider";
 
-type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom";
+type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom" | "follows";
 
 function normalizePathname(pathname: string) {
   const raw = String(pathname || "/");
@@ -23,6 +32,7 @@ function normalizePathname(pathname: string) {
 
 function getActivePlatform(pathname: string): UiPlatform {
   const p = normalizePathname(pathname);
+  if (p.startsWith("/follows")) return "follows";
   if (p.startsWith("/custom")) return "custom";
   if (p.startsWith("/douyin")) return "douyin";
   if (p.startsWith("/huya")) return "huya";
@@ -35,9 +45,25 @@ function isPlayerPath(pathname: string) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  // 「运行日志」「独立直播间」「观看统计」等独立窗口页面：无侧栏/导航/播放器外壳，
+  // 也不挂刷新引擎与开播通知（只属于主窗口，避免多窗口重复跑）
+  if (
+    pathname?.startsWith("/logs") ||
+    pathname?.startsWith("/player-window") ||
+    pathname?.startsWith("/stats")
+  ) {
+    return <>{children}</>;
+  }
+
   return (
     <PlayerOverlayProvider>
-      <AppShellInner>{children}</AppShellInner>
+      <MultiviewProvider>
+        <VolumeToastProvider>
+          <AppShellInner>{children}</AppShellInner>
+          <VolumeToastHost />
+        </VolumeToastProvider>
+      </MultiviewProvider>
     </PlayerOverlayProvider>
   );
 }
@@ -45,16 +71,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { effectiveTheme, toggleLightDark } = useTheme();
-  const { isFullscreen: isPlayerFullscreen } = usePlayerUi();
+  const { effectiveTheme } = useTheme();
+  const { isFullscreen: isPlayerFullscreen, isAlwaysOnTop, toggleAlwaysOnTop } = usePlayerUi();
   const playerOverlay = usePlayerOverlay();
   const custom = useCustomCategories();
+  const followState = useFollow();
+  const followHydrated = followState.hydrated;
+  const followedCount = followState.followedStreamers.length;
+  useLiveNotifications();
   const [hydrated, setHydrated] = useState(false);
+  const [isWindows, setIsWindows] = useState(false);
   const [isRoutePending, startRouteTransition] = useTransition();
 
   const normalizedPathname = useMemo(() => normalizePathname(pathname ?? "/"), [pathname]);
   const activePlatform = useMemo(() => getActivePlatform(normalizedPathname), [normalizedPathname]);
-  const [isSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // 首帧后再允许 padding 过渡：启动回读折叠偏好那一步保持即时，避免启动动画
+  const [appShellAnim, setAppShellAnim] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setAppShellAnim(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // 水合完成后从 localStorage 读取折叠偏好
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("dtv_sidebar_collapsed") === "1") {
+        setIsSidebarCollapsed(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // 进全屏收成折叠态（沉浸默认：dock 不常驻、仅左缘热区可唤出），退全屏还原进入前的折叠/展开偏好
+  const prevFullscreenRef = useRef(isPlayerFullscreen);
+  const collapsedBeforeFullscreenRef = useRef(isSidebarCollapsed);
+  useEffect(() => {
+    const nowFs = isPlayerFullscreen;
+    const wasFs = prevFullscreenRef.current;
+    if (nowFs && !wasFs) {
+      collapsedBeforeFullscreenRef.current = isSidebarCollapsed;
+      if (!isSidebarCollapsed) setIsSidebarCollapsed(true);
+    } else if (!nowFs && wasFs) {
+      setIsSidebarCollapsed(collapsedBeforeFullscreenRef.current);
+    }
+    prevFullscreenRef.current = nowFs;
+  }, [isPlayerFullscreen, isSidebarCollapsed]);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("dtv_sidebar_collapsed", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const [optimisticPlatform, setOptimisticPlatform] = useState<UiPlatform>(activePlatform);
 
   const playerActive = isPlayerPath(normalizedPathname) || playerOverlay.isOpen;
@@ -67,11 +142,29 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const osMod: any = await import("@tauri-apps/plugin-os");
+        const p = typeof osMod?.platform === "function" ? await osMod.platform() : "";
+        if (cancelled) return;
+        const plat = String(p).toLowerCase();
+        setIsWindows(plat === "windows" || plat === "linux");
+      } catch {
+        // non-tauri env: ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setOptimisticPlatform(activePlatform);
   }, [activePlatform]);
 
   useEffect(() => {
-    if (!custom.hydrated) return;
+    if (!custom.hydrated || !followHydrated) return;
 
     // 自定义分区：无数据则不显示（避免进入空白页）
     if (normalizedPathname.startsWith("/custom") && custom.entries.length === 0) {
@@ -79,22 +172,24 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 仅在本次启动首次落到首页时：如果订阅了分区，默认进入自定义分区页
-    if (custom.entries.length > 0 && normalizedPathname === "/") {
+    // 仅在本次启动首次落到首页时重定向默认首页（之后手动回 / 不被弹走）：
+    // 有关注主播进关注页；无关注停留斗鱼首页（/）
+    if (normalizedPathname === "/") {
       try {
-        const key = "dtv_initial_route_custom_v1";
+        const key = "dtv_initial_route_v2";
         if (window.sessionStorage.getItem(key) === "1") return;
         window.sessionStorage.setItem(key, "1");
       } catch {
         // ignore
       }
-      router.replace("/custom/");
+      if (followedCount > 0) router.replace("/follows/");
     }
-  }, [custom.entries.length, custom.hydrated, normalizedPathname, router]);
+  }, [custom.entries.length, custom.hydrated, followedCount, followHydrated, normalizedPathname, router]);
 
   const navigatePlatform = useCallback(
     (p: UiPlatform) => {
       const map: Record<UiPlatform, string> = {
+        follows: "/follows/",
         douyu: "/",
         douyin: "/douyin/",
         huya: "/huya/",
@@ -120,6 +215,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     // Ignore errors (non-next runtime, prefetch not supported, etc.).
     try {
       void router.prefetch("/");
+      void router.prefetch("/follows/");
       void router.prefetch("/douyin/");
       void router.prefetch("/huya/");
       void router.prefetch("/bilibili/");
@@ -130,18 +226,42 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [custom.entries.length, custom.hydrated, hydrated, router]);
 
   const showRoutePending = optimisticPlatform !== activePlatform || isRoutePending;
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
 
-  return (
-    <div className={styles.appShell}>
-      {!shouldHidePlayerChrome ? (
-        <Sidebar isCollapsed={isSidebarCollapsed} />
-      ) : null}
+  // 刷新引擎挂在常驻外壳：不随侧栏折叠/路由切换卸载，开播通知因此与侧栏状态解耦
+  const shellEl = (
+    <div
+      className={`${styles.appShell}${appShellAnim ? ` ${styles.appShellAnim}` : ""}`}
+      style={{ paddingLeft: isSidebarCollapsed ? "var(--sidebar-collapsed-width)" : "var(--sidebar-width)" }}
+    >
+      <Sidebar isCollapsed={isSidebarCollapsed} isPlayerActive={playerActive} onToggle={toggleSidebar} immersive={shouldHidePlayerChrome} />
+
+      {/* macOS 交通灯旁常驻药丸：应用级窗口置顶，全视图常驻（不随 idle 隐藏）。
+          portal 到 body + z-index:10001，与侧边栏把手同一模式，逃逸所有层叠上下文，
+          稳居侧边栏(100)/播放覆盖层(500)/CSS 全屏播放器(9999) 之上。
+          hydrated gate 避免 SSR/客户端 portalTarget 不一致的 hydration mismatch。 */}
+      {hydrated && portalTarget && !isWindows
+        ? createPortal(
+            <button
+              type="button"
+              className={`player-pin-pill${isAlwaysOnTop ? " is-active" : ""}`}
+              data-tauri-drag-region="false"
+              aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+              aria-pressed={isAlwaysOnTop}
+              title={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+              onClick={toggleAlwaysOnTop}
+            >
+              <PinIcon filled={isAlwaysOnTop} />
+            </button>,
+            portalTarget
+          )
+        : null}
+
       <div className={styles.appMain}>
         {!shouldHidePlayerChrome ? (
           <Navbar
             theme={effectiveTheme}
             activePlatform={optimisticPlatform}
-            onThemeToggle={toggleLightDark}
             onPlatformChange={navigatePlatform}
           />
         ) : null}
@@ -204,4 +324,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+
+  return <FollowRefreshProvider>{shellEl}</FollowRefreshProvider>;
 }

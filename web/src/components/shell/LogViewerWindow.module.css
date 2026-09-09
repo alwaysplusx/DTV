@@ -1,0 +1,145 @@
+.windowRoot {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  box-sizing: border-box;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterChips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--secondary-text);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.chip:hover {
+  color: var(--primary-text);
+}
+
+.chipActive {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.toolBtns {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.toolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--secondary-text);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.toolBtn:hover {
+  color: var(--primary-text);
+  border-color: var(--primary-text);
+}
+
+.toolBtnDanger:hover {
+  color: rgba(255, 96, 96, 1);
+  border-color: rgba(255, 96, 96, 0.6);
+}
+
+/* 二次确认态：常驻红色破坏色（与关注取关确认按钮一致） */
+.toolBtnConfirm {
+  color: rgba(255, 96, 96, 1);
+  border-color: rgba(255, 96, 96, 0.6);
+  background: color-mix(in srgb, rgba(255, 96, 96, 1) 10%, transparent);
+}
+
+.logList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+:global(:root[data-theme="light"]) .logList {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.logLine {
+  display: block;
+}
+
+.logTime {
+  color: var(--secondary-text);
+  margin-right: 6px;
+}
+
+.logTarget {
+  color: var(--secondary-text);
+  opacity: 0.8;
+  margin-right: 6px;
+}
+
+.logLevelError {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.logLevelWarn {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.logLevelInfo {
+  color: var(--primary-text);
+}
+
+.logLevelDebug {
+  color: var(--secondary-text);
+}
+
+.logStatus {
+  font-size: var(--text-xs, 12px);
+  color: var(--secondary-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logStatusHint {
+  opacity: 0.8;
+}

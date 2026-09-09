@@ -1,5 +1,9 @@
 .sidebarShell {
-  z-index: 100;
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  z-index: 20000;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
@@ -9,9 +13,353 @@
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
 }
 
+/* 宽度动画（+railSubtle 底色切换过渡）：JS 首帧后挂 .anim，
+   启动时若回读到“已折叠”那一步 width 突变不触发动画；immersiveDock 在后面覆盖为 transform-only */
+.sidebarShell.anim {
+  transition:
+    width var(--sidebar-anim),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebarShell.anim,
+  .sidebarShell.immersiveDock,
+  .footerClusterAnim,
+  .footerClusterAnim .footerArm,
+  .footerClusterAnim .footerArmFace {
+    transition: none;
+  }
+}
+
+/* 折叠/展开内容舞台：overflow 裁剪做“抽屉开合”。
+   展开态与迷你条各自按目标宽度(240/68)排版、都贴左对齐，容器宽度过渡时只裁不回流；
+   两者底栏按钮/表头头像本已“同位”，宽度落定后整块切换几乎无位移。
+   高度是 aside 减掉下方固定三键簇的高度（收起 170 / 展开 68） */
+.sidebarStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.listPane,
+.railPane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.listPane {
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+}
+
+.railPane {
+  width: var(--sidebar-collapsed-width);
+}
+
+/* 底部三键簇（收起/展开锚点 + 主题 + 设置）：锚点不动，主题/设置以锚点中心为圆心做 90° 圆周开合。
+   锚点盒 left:12/bottom:12 → 中心 x=34、距底 34（与历史 rail/展开底部按钮同位）；
+   臂以锚点中心(left:34/bottom:34)为 transform-origin，收起 -90°(朝上)、展开 0°(朝右)，
+   按钮中心位于臂局部 (var(--arm-r), 0)，纯 rotate 即得真圆轨迹 */
+.footerCluster {
+  position: relative;
+  width: 100%;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  overflow: visible;
+}
+
+.footerClusterRail {
+  height: 170px;
+}
+
+.footerClusterList {
+  height: 68px;
+}
+
+/* 首帧后再开簇的动效过渡（与宽度过渡同门控：启动回读折叠偏好那一步不播动画） */
+.footerClusterAnim {
+  transition: height var(--sidebar-anim);
+}
+
+.footerClusterAnim .footerArm,
+.footerClusterAnim .footerArmFace {
+  transition: transform var(--sidebar-anim);
+}
+
+.footerAnchor {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+}
+
+.footerArm {
+  position: absolute;
+  left: 34px;
+  bottom: 34px;
+  width: 0;
+  height: 0;
+  transform: rotate(-90deg);
+  transform-origin: 0 0;
+}
+
+.footerArmRow {
+  transform: rotate(0deg);
+}
+
+.footerArmBtn {
+  position: absolute;
+  left: calc(var(--arm-r) - 22px);
+  top: -22px;
+  width: 44px;
+  height: 44px;
+}
+
+/* 臂内内容反向自转：臂带按钮绕锚点旋转做圆周运动时，内容(图标/设置菜单)保持朝上。
+   臂 -90°(收起) ↔ 0°(展开)，面 +90°(收起) ↔ 0°(展开)，等时同缓动 → 内容全程不歪 */
+.footerArmFace {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(0deg);
+}
+
+.footerArmFaceRail {
+  transform: rotate(90deg);
+}
+
+/* 三键统一质感：44px 圆角、subtle 底（复用原 railFooterBtn 语言） */
+.footerClusterBtn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.footerClusterBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.footerClusterBtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+:global(:root[data-theme="light"]) .footerClusterBtn {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(71, 85, 105, 1);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+:global(:root[data-theme="light"]) .footerClusterBtn:hover {
+  background: rgba(248, 250, 252, 1);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+/* 抽屉拉手 — 右侧圆角标签，左侧与面板平齐 */
+/* 提高选择器优先级以覆盖全局 button reset */
+.sidebarShell button.drawerHandle {
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 80px;
+  border-radius: 0 6px 6px 0;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  z-index: 20000;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebarShell button.drawerHandle:hover {
+  color: var(--text-primary);
+}
+
+.sidebarShell button.drawerHandle:active {
+  color: var(--text-primary);
+}
+
+/* 微可见态：播放时拉手浮在画面之上低调可见 */
+.sidebarShell button.drawerHandleSubtle {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.sidebarShell button.drawerHandleSubtle:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* 折叠迷你条播放/全屏时浮在画面上：半透明底 + 弱化描边（与把手 subtle 同语言） */
+.sidebarShell.railSubtle {
+  background: rgba(255, 255, 255, 0.08);
+  border-right-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+/* 全屏沉浸折叠态：dock 平时整体滑出画面、不挡视频（仅左缘热区作把手），悬停滑入、移开滑出 */
+.sidebarShell.immersiveDock {
+  transform: translateX(-100%);
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.sidebarShell.immersiveDock.immersiveDockPeek {
+  transform: translateX(0);
+  pointer-events: auto;
+  /* 盖过 railSubtle 的 8% 白底：唤出的 dock 直接不透明（与正常侧栏一致） */
+  background: var(--bg-secondary);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* 全屏沉浸折叠态的极细左缘热区：常态只露一条竖线，hover 加亮 */
+.immersiveHot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  z-index: 20001;
+  cursor: pointer;
+  background: transparent;
+}
+
+.immersiveHot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+  transition: background 0.15s ease, width 0.15s ease;
+}
+
+.immersiveHot:hover::before {
+  background: rgba(255, 255, 255, 0.6);
+  width: 3px;
+}
+
 .sidebarBody {
   flex: 1;
   min-height: 0;
   overflow: visible;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 底部工具条：左下角收起按钮 + 右侧设置/主题，随关注栏一起折叠/展开 */
+.sidebarFooter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebarFooterTools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 与折叠迷你条最底部的展开按钮同位（迷你条 68px 宽 → 中心 x=34px、距底 34px）：
+   12px padding + 44px 按钮半宽天然落在中线上，底对齐保证距底 12px；质感同 settingsBtn */
+.sidebarCollapseBtn {
+  width: 44px;
+  height: 44px;
+  align-self: flex-end;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.sidebarCollapseBtn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+:global(:root[data-theme="light"]) .sidebarCollapseBtn {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(71, 85, 105, 1);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.themeToggle {
+  width: 44px;
+  height: 44px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.themeToggle:hover {
+  transform: translateY(-1px);
+}
+
+.themeToggleDark {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.themeToggleDark:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.themeToggleLight {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(71, 85, 105, 1);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.themeToggleLight:hover {
+  background: rgba(248, 250, 252, 1);
+  border-color: rgba(148, 163, 184, 0.35);
 }

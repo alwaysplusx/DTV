@@ -10,16 +10,27 @@ enum ConnectionOutcome {
 
 #[tauri::command]
 pub async fn stop_douyin_danmu_listener(
+    room_id: Option<String>,
+    window: tauri::Window,
     state: tauri::State<'_, crate::platforms::common::DouyinDanmakuState>,
 ) -> Result<(), String> {
-    let previous_tx = {
+    // `room_id` 为 None/空 = 停止该窗口全部；否则只减该窗口引用，归零才真停（跨窗口共享连接）。
+    let senders = {
         let mut lock = state.inner().0.lock().unwrap();
-        lock.take()
+        match room_id.as_deref() {
+            None | Some("") => crate::platforms::common::release_all_danmaku_rooms(
+                &mut lock,
+                window.label(),
+            ),
+            Some(rid) => crate::platforms::common::release_danmaku_room(&mut lock, rid, window.label())
+                .into_iter()
+                .collect(),
+        }
     };
 
-    if let Some(tx) = previous_tx {
+    for tx in senders {
         if tx.send(()).await.is_err() {
-            eprintln!("[Douyin Danmaku] Failed to send shutdown. Task might have already completed or panicked.");
+            log::error!("[Douyin Danmaku] Failed to send shutdown. Task might have already completed or panicked.");
         }
     }
 
@@ -29,47 +40,76 @@ pub async fn stop_douyin_danmu_listener(
 #[tauri::command]
 pub async fn start_douyin_danmu_listener(
     payload: crate::platforms::common::GetStreamUrlPayload,
+    window: tauri::Window,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, crate::platforms::common::DouyinDanmakuState>,
 ) -> Result<(), String> {
     let room_id_or_url = payload.args.room_id_str;
-    println!(
+    log::info!(
         "[Douyin Danmaku] Received request for room_id_or_url: {}",
         room_id_or_url
     );
 
-    let previous_tx = {
+    // 引用计数共享：同窗口重复 start 先释放旧引用（保持重启语义）；
+    // 跨窗口同房间复用现有连接，互不误停。
+    let normalized_room_id = normalize_douyin_live_id(&room_id_or_url);
+    let (need_spawn, stale_tx) = {
         let mut lock = state.inner().0.lock().unwrap();
-        lock.take()
+        let stale_tx = crate::platforms::common::release_danmaku_room(
+            &mut lock,
+            &normalized_room_id,
+            window.label(),
+        );
+        let need_spawn = crate::platforms::common::acquire_danmaku_room(
+            &mut lock,
+            &normalized_room_id,
+            window.label(),
+        );
+        (need_spawn, stale_tx)
     };
-
-    if let Some(tx) = previous_tx {
-        println!("[Douyin Danmaku] Sending shutdown to previous Douyin listener task.");
+    if let Some(tx) = stale_tx {
+        log::info!(
+            "[Douyin Danmaku] Sending shutdown to previous Douyin listener task for room {}.",
+            normalized_room_id
+        );
         if tx.send(()).await.is_err() {
-            eprintln!("[Douyin Danmaku] Failed to send shutdown. Task might have already completed or panicked.");
+            log::error!("[Douyin Danmaku] Failed to send shutdown. Task might have already completed or panicked.");
         }
+    }
+    if !need_spawn {
+        log::info!(
+            "[Douyin Danmaku] Reusing existing listener for room {}.",
+            normalized_room_id
+        );
+        return Ok(());
     }
 
     if room_id_or_url == "stop_listening" {
-        println!(
+        log::info!(
             "[Douyin Danmaku] Received stop_listening signal. Listener will not be restarted."
         );
         return Ok(());
     }
 
-    let normalized_room_id = normalize_douyin_live_id(&room_id_or_url);
-
     let (tx_shutdown, mut rx_shutdown) = tokio_mpsc::channel::<()>(1);
     {
         let mut lock = state.inner().0.lock().unwrap();
-        *lock = Some(tx_shutdown);
+        crate::platforms::common::register_danmaku_stop_tx(
+            &mut lock,
+            &normalized_room_id,
+            tx_shutdown.clone(),
+        );
     }
 
     let app_handle_clone = app_handle.clone();
     let room_id_str_clone = normalized_room_id.clone();
+    // 注册表句柄克隆给 spawned task，用于退出兜底清理（Arc 内部共享，State 不能跨 await 持有）
+    let state_for_cleanup = state.inner().clone();
+    let room_id_for_cleanup = normalized_room_id.clone();
+    let tx_for_guard = tx_shutdown.clone();
 
-        tokio::spawn(async move {
-        println!(
+    tokio::spawn(async move {
+        log::info!(
             "[Douyin Danmaku] Spawning listener for room: {}",
             room_id_str_clone
         );
@@ -89,7 +129,7 @@ pub async fn start_douyin_danmu_listener(
                 let actual_room_id = fetcher.get_room_id().await?;
                 let cookie_header = fetcher.get_dy_cookie().await?;
                 let user_unique_id = fetcher.get_user_unique_id().await?;
-                println!(
+                log::info!(
                     "[Douyin Danmaku] Using: room_id={}, user_unique_id={}",
                     actual_room_id, user_unique_id
                 );
@@ -102,7 +142,7 @@ pub async fn start_douyin_danmu_listener(
                 )
                 .await?;
 
-                println!(
+                log::info!(
                     "[Douyin Danmaku] WebSocket connected for room: {}",
                     actual_room_id
                 );
@@ -122,7 +162,7 @@ pub async fn start_douyin_danmu_listener(
                         Ok(ConnectionOutcome::Disconnected)
                     }
                     _ = rx_shutdown.recv() => {
-                        println!(
+                        log::info!(
                             "[Douyin Danmaku] Received shutdown signal for room {}.",
                             actual_room_id
                         );
@@ -136,7 +176,7 @@ pub async fn start_douyin_danmu_listener(
             match result {
                 Ok(ConnectionOutcome::Stop) => break,
                 Ok(ConnectionOutcome::Disconnected) => {
-                    eprintln!(
+                    log::error!(
                         "[Douyin Danmaku] Disconnected, retrying in {}s.",
                         backoff_secs
                     );
@@ -147,22 +187,28 @@ pub async fn start_douyin_danmu_listener(
                 Err(e) => {
                     let err_text = e.to_string();
                     // If the server is explicitly throttling / blocking, avoid hammering the same egress IP.
-                    if err_text.contains("http_status=429") || err_text.contains("http_status=403") {
+                    if err_text.contains("http_status=429") || err_text.contains("http_status=403")
+                    {
                         max_backoff_secs = 300;
                         backoff_secs = backoff_secs.max(60);
-                    } else if err_text.contains("http_status=504") || err_text.contains(" 504 ") || err_text.contains("504 Gateway Timeout") {
+                    } else if err_text.contains("http_status=504")
+                        || err_text.contains(" 504 ")
+                        || err_text.contains("504 Gateway Timeout")
+                    {
                         max_backoff_secs = 120;
                         backoff_secs = backoff_secs.max(10);
                     }
-                    eprintln!(
+                    log::error!(
                         "[Douyin Danmaku] Connection error: {}. Retrying in {}s.",
-                        e, backoff_secs
+                        e,
+                        backoff_secs
                     );
                 }
             }
 
             let jitter_ms: u64 = rand::thread_rng().gen_range(0..=800);
-            let sleep_fut = sleep(Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms));
+            let sleep_fut =
+                sleep(Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms));
             tokio::select! {
                 _ = sleep_fut => {}
                 _ = rx_shutdown.recv() => break,
@@ -171,7 +217,18 @@ pub async fn start_douyin_danmu_listener(
                 backoff_secs = (backoff_secs * 2).min(max_backoff_secs);
             }
         }
+
+        // 任务退出后兜底清理注册表（正常 stop 路径已被 release 移除）。
+        // 条目已换成新实例（same_channel 不符）时不动作，防误删。
+        let mut lock = state_for_cleanup.0.lock().unwrap();
+        let is_ours = lock
+            .get(&room_id_for_cleanup)
+            .and_then(|room| room.stop_tx.as_ref())
+            .map(|tx| tx.same_channel(&tx_for_guard))
+            .unwrap_or(false);
+        if is_ours {
+            lock.remove(&room_id_for_cleanup);
+        }
     });
     Ok(())
 }
-

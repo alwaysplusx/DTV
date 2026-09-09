@@ -1,0 +1,309 @@
+/* 设置入口（关注栏底部左下角）+ 二级弹出菜单 + 版本/打赏弹窗 */
+
+.settingsRoot {
+  position: relative;
+}
+
+.settingsBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:global(:root[data-theme="light"]) .settingsBtn {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(71, 85, 105, 1);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.settingsBtn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+:global(:root[data-theme="light"]) .settingsBtn:hover {
+  background: rgba(248, 250, 252, 1);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.badgeDot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.22);
+}
+
+/* 二级菜单：从设置按钮向上弹出 */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menuItem {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.menuItem:hover {
+  background: var(--hover-bg);
+}
+
+.menuItemMain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.menuItemLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.menuItemValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+/* 更新可用角标（菜单项内） */
+.badgeNew {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: rgba(248, 250, 252, 1);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 18px;
+}
+
+/* —— 下方为从 Navbar 迁移来的弹窗样式 —— */
+
+.overlayBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 21000;
+}
+
+.overlayCard {
+  width: min(520px, calc(100vw - 36px));
+  border-radius: 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.overlayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.overlayTitle {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--primary-text);
+}
+
+.overlayClose {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--secondary-text);
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.overlayClose:hover {
+  background: var(--hover-bg);
+  color: var(--primary-text);
+}
+
+.overlayBody {
+  padding: 14px;
+}
+
+.qrImage {
+  width: min(320px, 72vw);
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 6px auto 10px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.updateMeta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--secondary-text);
+  margin-bottom: 10px;
+}
+
+.updateNotes {
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--primary-text);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.updateActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.primaryBtn {
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-gradient);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-text);
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.18s ease, filter 0.18s ease, border-color 0.18s ease;
+}
+
+.menuItemStatic {
+  cursor: default;
+}
+
+.menuItemStatic:hover {
+  background: transparent;
+}
+
+:global(:root[data-theme="light"]) .menuItemStatic:hover {
+  background: transparent;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:global(:root[data-theme="light"]) .stepper {
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+.stepperBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--secondary-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.stepperBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--primary-text);
+}
+
+:global(:root[data-theme="light"]) .stepperBtn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.stepperBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.stepperInput {
+  width: 36px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--primary-text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.stepperInput::-webkit-outer-spin-button,
+.stepperInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

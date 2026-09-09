@@ -119,7 +119,7 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
     let response = match response_result {
         Ok(res) => res,
         Err(e) => {
-            eprintln!("[Backend fetch_live_list] Reqwest error: {}", e);
+            log::error!("[Backend fetch_live_list] Reqwest error: {}", e);
             return FrontendLiveListResponse {
                 error: 500,
                 msg: Some(format!("Network request failed: {}", e)),
@@ -134,7 +134,7 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
             "[Backend fetch_live_list] API request failed with status: {}",
             response.status()
         );
-        eprintln!("{}", err_msg);
+        log::error!("{}", err_msg);
         return FrontendLiveListResponse {
             error: status_code,
             msg: Some(format!("Douyu API request failed: {}", response.status())),
@@ -145,7 +145,7 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!(
+            log::error!(
                 "[Backend fetch_live_list] Error reading response text: {}",
                 e
             );
@@ -188,7 +188,7 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
                         data: Some(frontend_data),
                     }
                 } else {
-                    eprintln!(
+                    log::error!(
                         "[Backend fetch_live_list] API success but no data field. Raw: {}",
                         text
                     );
@@ -199,9 +199,11 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
                     }
                 }
             } else {
-                eprintln!(
+                log::error!(
                     "[Backend fetch_live_list] API returned error {}. Msg: {:?}. Raw: {}",
-                    douyu_response.error, douyu_response.msg, text
+                    douyu_response.error,
+                    douyu_response.msg,
+                    text
                 );
                 FrontendLiveListResponse {
                     error: douyu_response.error,
@@ -213,9 +215,10 @@ pub async fn fetch_live_list(offset: u32, cate2: String, limit: u32) -> Frontend
             }
         }
         Err(e) => {
-            eprintln!(
+            log::error!(
                 "[Backend fetch_live_list] Error parsing Douyu Mobile JSON: {}. Raw: {}",
-                e, text
+                e,
+                text
             );
             FrontendLiveListResponse {
                 error: -2,
@@ -239,7 +242,7 @@ pub async fn fetch_live_list_for_cate3(
         "https://www.douyu.com/gapi/rkc/directory/mixListV1/3_{}/{}?limit={}",
         cate3_id, current_page, limit
     );
-    println!("[Backend fetch_live_list_for_cate3] Fetching URL: {}", url);
+    log::info!("[Backend fetch_live_list_for_cate3] Fetching URL: {}", url);
 
     let client = match reqwest::Client::builder()
         .http1_only()
@@ -265,7 +268,7 @@ pub async fn fetch_live_list_for_cate3(
     let response = match response_result {
         Ok(res) => res,
         Err(e) => {
-            eprintln!("[Backend fetch_live_list_for_cate3] Reqwest error: {}", e);
+            log::error!("[Backend fetch_live_list_for_cate3] Reqwest error: {}", e);
             return FrontendLiveListResponse {
                 error: 500, // Simulate HTTP 500 for client error
                 msg: Some(format!("Network request failed: {}", e)),
@@ -280,7 +283,7 @@ pub async fn fetch_live_list_for_cate3(
             "[Backend fetch_live_list_for_cate3] API request failed with status: {}",
             response.status()
         );
-        eprintln!("{}", err_msg);
+        log::error!("{}", err_msg);
         return FrontendLiveListResponse {
             error: status_code,
             msg: Some(format!("Douyu API request failed: {}", response.status())),
@@ -291,7 +294,7 @@ pub async fn fetch_live_list_for_cate3(
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!(
+            log::error!(
                 "[Backend fetch_live_list_for_cate3] Error reading response text: {}",
                 e
             );
@@ -338,7 +341,7 @@ pub async fn fetch_live_list_for_cate3(
                         data: Some(frontend_data),
                     }
                 } else {
-                    eprintln!("[Backend fetch_live_list_for_cate3] API success but no data field. Raw: {}", text);
+                    log::error!("[Backend fetch_live_list_for_cate3] API success but no data field. Raw: {}", text);
                     FrontendLiveListResponse {
                         error: -1,
                         msg: Some("Douyu API success code but no data field.".to_string()),
@@ -346,9 +349,11 @@ pub async fn fetch_live_list_for_cate3(
                     }
                 }
             } else {
-                eprintln!(
+                log::error!(
                     "[Backend fetch_live_list_for_cate3] API returned error {}. Msg: {:?}. Raw: {}",
-                    douyu_response.code, douyu_response.msg, text
+                    douyu_response.code,
+                    douyu_response.msg,
+                    text
                 );
                 FrontendLiveListResponse {
                     error: douyu_response.code,
@@ -360,9 +365,10 @@ pub async fn fetch_live_list_for_cate3(
             }
         }
         Err(e) => {
-            eprintln!(
+            log::error!(
                 "[Backend fetch_live_list_for_cate3] Error parsing Douyu V1 API JSON: {}. Raw: {}",
-                e, text
+                e,
+                text
             );
             FrontendLiveListResponse {
                 error: -2,

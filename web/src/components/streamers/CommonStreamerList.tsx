@@ -7,6 +7,8 @@ import { Play, Users } from "lucide-react";
 
 import styles from "./CommonStreamerList.module.css";
 import { SmoothImage } from "@/components/common/SmoothImage";
+import { HoverStreamPreview } from "@/components/follows/HoverStreamPreview";
+import { useCardHoverPreview } from "@/hooks/useCardHoverPreview";
 import type { CategorySelectedEvent } from "@/platforms/common/categoryTypes";
 import type { CommonStreamer } from "@/platforms/common/streamerTypes";
 import { useHuyaLiveRooms } from "@/hooks/liveRooms/useHuyaLiveRooms";
@@ -129,6 +131,8 @@ export function CommonStreamerList({
     return next;
   }, [rooms]);
 
+  const preview = useCardHoverPreview();
+
   useEffect(() => {
     return () => {
       if (scrollRafRef.current) window.cancelAnimationFrame(scrollRafRef.current);
@@ -194,6 +198,12 @@ export function CommonStreamerList({
     if (platform === "douyu") return `douyu:${douyuCategoryType ?? "none"}:${douyuCategoryId ?? "none"}`;
     return `${platform}:${categoryHref ?? "none"}`;
   }, [categoryHref, douyuCategoryId, douyuCategoryType, platform]);
+
+  // 切换分区：清掉可能残留的悬浮预览
+  useEffect(() => {
+    preview.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey, preview.reset]);
 
   useEffect(() => {
     if (isLoading || isLoadingMore) return;
@@ -362,59 +372,69 @@ export function CommonStreamerList({
             animate={{ opacity: 1, transition: { duration: 0.14 } }}
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
-            {uniqueRooms.map((room, idx) => (
-              <m.div
-                key={room.room_id}
-                className={styles.cardOuter}
-                role="button"
-                tabIndex={0}
-                onClick={() => onCardClick(room.room_id)}
-                onKeyDown={(e) => onCardKeyDown(e, room.room_id)}
-                initial="rest"
-                animate="rest"
-                whileHover={isScrolling ? undefined : "hover"}
-              >
-                <Card className={styles.card}>
-                  <div className={styles.preview}>
-                    <div className={styles.imageWrapper}>
-                      <m.div className={styles.previewMotion} variants={coverVariants} style={{ transformOrigin: "center" }}>
-                        <SmoothImage
-                          src={room.room_cover || ""}
-                          alt={room.title}
-                          className={styles.previewImage}
-                          loading={idx < 12 ? "eager" : "lazy"}
-                        />
-                      </m.div>
-                      <m.div className={styles.previewHoverOverlay} aria-hidden="true" variants={overlayVariants}>
-                        <m.div className={styles.playButton} aria-hidden="true" variants={playButtonVariants}>
-                          <Play size={22} />
+            {uniqueRooms.map((room, idx) => {
+              const roomId = String(room.room_id ?? "");
+              const isPreviewing = !!preview.target && preview.target.platform === platform && preview.target.id === roomId;
+              return (
+                <m.div
+                  key={room.room_id}
+                  className={styles.cardOuter}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onCardClick(room.room_id)}
+                  onKeyDown={(e) => onCardKeyDown(e, room.room_id)}
+                  onMouseEnter={() => preview.enter(platform, roomId)}
+                  onMouseLeave={() => preview.leave(platform, roomId)}
+                  initial="rest"
+                  animate="rest"
+                  whileHover={isScrolling ? undefined : "hover"}
+                >
+                  <Card className={styles.card}>
+                    <div className={styles.preview}>
+                      <div className={styles.imageWrapper}>
+                        <m.div className={styles.previewMotion} variants={coverVariants} style={{ transformOrigin: "center" }}>
+                          <SmoothImage
+                            src={room.room_cover || ""}
+                            alt={room.title}
+                            className={styles.previewImage}
+                            loading={idx < 12 ? "eager" : "lazy"}
+                          />
                         </m.div>
-                      </m.div>
+                        {!isPreviewing ? (
+                          <m.div className={styles.previewHoverOverlay} aria-hidden="true" variants={overlayVariants}>
+                            <m.div className={styles.playButton} aria-hidden="true" variants={playButtonVariants}>
+                              <Play size={22} />
+                            </m.div>
+                          </m.div>
+                        ) : null}
 
-                      <div className={styles.viewerBadge} aria-label={`观看人数 ${room.viewer_count_str || "0"}`}>
-                        <span className={styles.viewerPill}>
-                          <Users size={12} />
-                          {room.viewer_count_str || "0"}
-                        </span>
+                        <div className={styles.viewerBadge} aria-label={`观看人数 ${room.viewer_count_str || "0"}`}>
+                          <span className={styles.viewerPill}>
+                            <Users size={12} />
+                            {room.viewer_count_str || "0"}
+                          </span>
+                        </div>
+
+                        {isPreviewing ? <HoverStreamPreview platform={platform} roomId={roomId} /> : null}
                       </div>
                     </div>
-                  </div>
-                  <div className={styles.footer}>
-                    <div className={styles.avatarContainer}>
-                      <SmoothImage src={room.avatar || ""} alt={room.nickname} className={styles.avatarImg} loading={idx < 12 ? "eager" : "lazy"} />
-                    </div>
-                    <div className={styles.textDetails}>
-                      <h3 className={styles.roomTitle} title={room.title}>
-                        {room.title}
-                      </h3>
-                      <div className={styles.subLine} title={room.nickname}>
-                        <span className={styles.nickname}>{room.nickname || "主播"}</span>
+                    <div className={styles.footer}>
+                      <div className={styles.avatarContainer}>
+                        <SmoothImage src={room.avatar || ""} alt={room.nickname} className={styles.avatarImg} loading={idx < 12 ? "eager" : "lazy"} />
+                      </div>
+                      <div className={styles.textDetails}>
+                        <h3 className={styles.roomTitle} title={room.title}>
+                          {room.title}
+                        </h3>
+                        <div className={styles.subLine} title={room.nickname}>
+                          <span className={styles.nickname}>{room.nickname || "主播"}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Card>
-              </m.div>
-            ))}
+                  </Card>
+                </m.div>
+              );
+            })}
           </m.div>
         </AnimatePresence>
 

@@ -53,7 +53,10 @@ pub async fn generate_signature(
         tpl_params_vec.push(format!("{}={}", key_str, value));
     }
     let to_sign_str = tpl_params_vec.join(",");
-    debug!("[Douyin Danmaku] String to MD5 for signature: {}", to_sign_str);
+    debug!(
+        "[Douyin Danmaku] String to MD5 for signature: {}",
+        to_sign_str
+    );
 
     // Use md_5 crate for MD5 computation
     let mut hasher = Md5::new();
@@ -76,7 +79,10 @@ pub async fn generate_signature(
     runtime
         .execute_script("[bootstrap]", FastString::from_static(bootstrap_script))
         .map_err(|e| {
-            error!("[Douyin Danmaku] Error during deno_core bootstrap script: {}", e);
+            error!(
+                "[Douyin Danmaku] Error during deno_core bootstrap script: {}",
+                e
+            );
             e
         })?;
 
@@ -84,7 +90,10 @@ pub async fn generate_signature(
     runtime
         .execute_script("./sign.js", FastString::from_static(SIGN_JS_CONTENT))
         .map_err(|e| {
-            error!("[Douyin Danmaku] Error during deno_core eval of sign.js: {}", e);
+            error!(
+                "[Douyin Danmaku] Error during deno_core eval of sign.js: {}",
+                e
+            );
             e
         })?;
 
@@ -94,7 +103,10 @@ pub async fn generate_signature(
     let result = runtime
         .execute_script("[call_get_sign]", fast_call_script)
         .map_err(|e| {
-            error!("[Douyin Danmaku] Error during deno_core call to get_sign: {}", e);
+            error!(
+                "[Douyin Danmaku] Error during deno_core call to get_sign: {}",
+                e
+            );
             e
         })?;
 

@@ -1,0 +1,56 @@
+/* B 站网页端风格：仅喇叭图标 + 音量百分比，无进度条。
+   位置由内联样式决定（跟着直播画面中心），而非 css top/left，确保侧边栏存在时仍以画面为锚。 */
+.panel {
+  position: fixed;
+  z-index: 10002;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(20, 22, 26, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.94);
+  font-family: var(--font-sans);
+  pointer-events: none;
+  /* 内部居中：position 锚点 + translate 反向把元素中心放到锚点 */
+  translate: -50% -50%;
+}
+
+:global(:root[data-theme="light"]) .panel {
+  background: rgba(248, 250, 252, 0.88);
+  border-color: rgba(15, 23, 42, 0.10);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.16);
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+:global(:root[data-theme="light"]) .icon {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.number {
+  font-size: 13px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+  min-width: 38px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.94);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+:global(:root[data-theme="light"]) .number {
+  color: rgba(15, 23, 42, 0.92);
+}

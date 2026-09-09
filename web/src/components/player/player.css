@@ -265,8 +265,36 @@
   transition: opacity 0.2s ease;
 }
 
+/* 弹幕开启时仅子弹可命中（host 仍 none），供悬停识别发送者 */
+.player-danmu-overlay.danmu-hoverable > * {
+  pointer-events: auto;
+}
+
+.danmu-sender-tooltip {
+  position: absolute;
+  z-index: 8;
+  display: none;
+  max-width: 240px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(15, 18, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(245, 247, 250, 0.95);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .player-danmu-overlay span,
 .player-danmu-overlay div {
+  white-space: nowrap;
   font-weight: 900;
   text-shadow:
     1px 0 0 var(--danmu-stroke-color, #444444),
@@ -295,6 +323,7 @@
 .xgplayer-line-control,
 .xgplayer-danmu-toggle,
 .xgplayer-danmu-settings,
+.xgplayer-mirror-flip,
 .xgplayer-volume-control {
   display: inline-flex;
   align-items: center;
@@ -314,6 +343,7 @@
 .xgplayer-line-control:hover,
 .xgplayer-danmu-toggle:hover,
 .xgplayer-danmu-settings:hover,
+.xgplayer-mirror-flip:hover,
 .xgplayer-volume-control:hover {
   color: #ffffff;
 }
@@ -333,6 +363,7 @@
 .xgplayer-line-control svg,
 .xgplayer-danmu-toggle svg,
 .xgplayer-danmu-settings svg,
+.xgplayer-mirror-flip svg,
 .xgplayer-volume-control svg {
   pointer-events: none;
 }
@@ -1440,13 +1471,13 @@ html.web-fs-active .danmu-panel {
 
 .player-topbar {
   position: absolute;
-  top: 12px;
+  top: 52px;
   left: 12px;
   right: 12px;
   z-index: 260;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   pointer-events: none;
   opacity: 1;
@@ -1473,15 +1504,14 @@ html.web-fs-active .danmu-panel {
 }
 
 .player-topbar-left .player-topbar-streamer {
-  max-width: min(62vw, 720px);
   min-width: 0;
 }
 
 .player-topbar-streamer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
   border-radius: 999px;
   background: rgba(10, 10, 12, 0.52);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1491,6 +1521,67 @@ html.web-fs-active .danmu-panel {
     0 18px 46px rgba(0, 0, 0, 0.28),
     0 0 0 1px rgba(255, 255, 255, 0.06) inset;
   min-width: 0;
+  max-width: min(82vw, 980px);
+  flex: 0 1 auto;
+}
+
+/* 标题区与动作组之间的细分隔线：1px 高 24px，淡淡的白色 */
+.player-topbar-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.player-topbar-iconBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.player-topbar-iconBtn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* 关注按钮图标容器：+ / ✓ 旋转动画时 m.span 需 inline-flex 居中且不撑大按钮 */
+.player-topbar-iconBtn-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+}
+
+.player-topbar-iconBtn-glyph svg {
+  display: block;
+}
+
+.player-topbar-iconBtn:hover {
+  background: transparent;
+  color: #ffffff;
+}
+
+/* 置顶按钮激活态——与其他 actions 图标一致的浅色高亮，不要蓝色 */
+.player-topbar-iconBtn.is-active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.player-topbar-iconBtn.is-active:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
 }
 
 :root[data-theme="light"] .player-topbar-streamer {
@@ -1570,28 +1661,6 @@ html.web-fs-active .danmu-panel {
   color: rgba(245, 247, 250, 0.72);
 }
 
-.player-topbar-status {
-  flex: 0 0 auto;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  background: rgba(34, 197, 94, 0.16);
-  border: 1px solid rgba(34, 197, 94, 0.34);
-  color: rgba(219, 255, 235, 0.95);
-}
-
-.player-topbar-status.is-offline {
-  background: rgba(148, 163, 184, 0.14);
-  border-color: rgba(148, 163, 184, 0.28);
-  color: rgba(226, 232, 240, 0.88);
-}
-
-:root[data-theme="light"] .player-topbar-status.is-offline {
-  color: rgba(226, 232, 240, 0.88);
-}
-
 .player-topbar-follow {
   flex: 0 0 auto;
   padding: 8px 12px;
@@ -1668,6 +1737,23 @@ html.web-fs-active .danmu-panel {
   display: block;
 }
 
+/* 窗口置顶 —— Win/Linux：右上，激活蓝色（状态消费自 PlayerUiProvider，会话内持久） */
+.player-window-controls .window-btn--pin {
+  color: rgba(185, 185, 192, 0.9);
+}
+
+.player-window-controls .window-btn--pin:hover {
+  color: rgba(225, 225, 232, 0.95);
+}
+
+.player-window-controls .window-btn--pin.is-active {
+  color: #0a84ff;
+}
+
+.player-window-controls .window-btn--pin.is-active:hover {
+  color: #3d9fff;
+}
+
 .player-window-controls .window-btn--close:hover {
   background: #e81123;
   color: #ffffff;
@@ -1705,6 +1791,17 @@ html.web-fs-active .danmu-panel {
   pointer-events: none !important;
 }
 
+/* 播放器顶栏搜索按钮（与多屏/独立窗按钮同尺寸，图标 + 文字） */
+.player-topbar-follow.player-topbar-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.player-topbar-follow.player-topbar-search svg {
+  flex: 0 0 auto;
+}
+
 .player-close-btn {
   position: relative;
   background: rgba(10, 10, 12, 0.62);
@@ -1712,8 +1809,8 @@ html.web-fs-active .danmu-panel {
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.92);
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -1756,8 +1853,13 @@ html.web-fs-active .danmu-panel {
 }
 
 .player-close-btn svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.25s ease;
+}
+
+.player-close-btn:hover svg {
+  transform: rotate(90deg);
 }
 
 .danmu-panel-actions {
@@ -2430,4 +2532,17 @@ video.xgplayer-video {
 
 :root[data-theme="light"] .streamer-info-offline {
   border-bottom: 1px solid var(--border-color-light, #e0e0e0);
+}
+
+/* Mirror flip */
+.xgplayer-mirror-flip.is-active {
+  color: #0a84ff;
+}
+
+.xgplayer-mirror-flip.is-active:hover {
+  color: #3d9fff;
+}
+
+.video-container.is-mirror-flipped video {
+  transform: scaleX(-1);
 }

@@ -15,15 +15,15 @@ pub async fn fetch_bilibili_live_list(
     // 每次请求前都刷新一次 w_webid，避免使用过期的 ID
     let w_webid = match generate_bilibili_w_webid(state.clone()).await {
         Ok(id) => {
-            println!("[Bilibili] Refreshed w_webid: {}", id);
+            log::info!("[Bilibili] Refreshed w_webid: {}", id);
             id
         }
         Err(e) => {
-            eprintln!("[Bilibili] Failed to refresh w_webid, will fallback to cached value if available: {}", e);
+            log::error!("[Bilibili] Failed to refresh w_webid, will fallback to cached value if available: {}", e);
             let fallback = { state.w_webid.lock().unwrap().clone() };
             match fallback {
                 Some(id) => {
-                    println!(
+                    log::info!(
                         "[Bilibili] Using cached w_webid due to refresh failure: {}",
                         id
                     );
@@ -76,11 +76,13 @@ pub async fn fetch_bilibili_live_list(
         .join("&");
     let full_url = format!("{}?{}", url, query_str);
 
-    println!("[Bilibili] Fetch live list: w_webid={}, area_id={}, parent_area_id={}, page={}, wts={}, w_rid={}", w_webid, area_id, parent_area_id, page, wts, &params.iter().find(|(k,_)| k=="w_rid").map(|(_,v)| v.clone()).unwrap_or_default());
-    println!("[Bilibili] GET {}", full_url);
-    println!(
+    log::info!("[Bilibili] Fetch live list: w_webid={}, area_id={}, parent_area_id={}, page={}, wts={}, w_rid={}", w_webid, area_id, parent_area_id, page, wts, &params.iter().find(|(k,_)| k=="w_rid").map(|(_,v)| v.clone()).unwrap_or_default());
+    log::info!("[Bilibili] GET {}", full_url);
+    log::info!(
         "[Bilibili] Headers: User-Agent={}, Referer={}, Cookie={}",
-        ua, "https://www.bilibili.com/", "buvid3=i;"
+        ua,
+        "https://www.bilibili.com/",
+        "buvid3=i;"
     );
 
     let client = reqwest::Client::builder()

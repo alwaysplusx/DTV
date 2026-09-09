@@ -7,20 +7,26 @@ import { logger } from '@/utils/logger';
 
 export interface HuyaUnifiedEntry { quality: string; bitRate: number; url: string; }
 
-let huyaProxyActive = false;
-
-export async function getHuyaStreamConfig(
-  roomId: string,
-  quality: string = '原画',
-  line?: string | null,
-): Promise<{
+export type HuyaStreamConfig = {
   streamUrl: string;
   streamType: string | undefined;
+  proxySession: string | null;
   title?: string | null;
   anchorName?: string | null;
   avatar?: string | null;
   isLive?: boolean | null;
-}> {
+};
+
+/**
+ * 拉虎牙直播流并按需落到本地 FLV 代理。`session` 用于多路代理隔离（多屏一格一路），
+ * 由调用方持有并在关闭时回传给 `stopHuyaProxy`。
+ */
+export async function getHuyaStreamConfig(
+  roomId: string,
+  quality: string = '原画',
+  line?: string | null,
+  session?: string | null,
+): Promise<HuyaStreamConfig> {
   logger.debug('[HuyaPlayerHelper] getHuyaStreamConfig', { roomId, quality, line });
   const MAX_ATTEMPTS = 2; // 最多重试一次
 
@@ -38,21 +44,21 @@ export async function getHuyaStreamConfig(
 
         // 对齐 pure_live：虎牙播放需要稳定的 UA/Referer/Origin；WebView 无法给 FLV 请求加自定义 Header，走本地 proxy 注入。
         let finalStreamUrl = sanitizedUpstream;
+        const sessionKey = session ?? null;
         try {
-          await invoke('set_stream_url_cmd', { url: sanitizedUpstream });
+          await invoke('set_stream_url_cmd', { session: sessionKey, url: sanitizedUpstream });
           const proxyUrl = await invoke<string>('start_proxy');
           if (proxyUrl) {
-            finalStreamUrl = proxyUrl;
-            huyaProxyActive = true;
+            finalStreamUrl = sessionKey ? `${proxyUrl}/${encodeURIComponent(sessionKey)}` : proxyUrl;
           }
         } catch {
           // proxy 非关键：失败则回退直连（避免阻断播放），但可能更容易断流
-          huyaProxyActive = false;
         }
 
         return {
           streamUrl: finalStreamUrl,
           streamType,
+          proxySession: sessionKey,
           title: result?.title ?? null,
           anchorName: result?.nick ?? null,
           avatar: result?.avatar ?? null,
@@ -88,14 +94,15 @@ export async function getHuyaStreamConfig(
   throw new Error('主播未开播或无法获取直播流');
 }
 
-export async function stopHuyaProxy(): Promise<void> {
-  if (!huyaProxyActive) return;
+/**
+ * 关闭虎牙代理某 session；由调用方传入之前 `getHuyaStreamConfig` 返回的 `proxySession`，
+ * 避免 module-level 共享状态导致的多路误关。
+ */
+export async function stopHuyaProxy(session: string | null): Promise<void> {
   try {
-    await invoke('stop_proxy');
+    await invoke('stop_proxy', { session: session ?? null });
   } catch {
     // ignore
-  } finally {
-    huyaProxyActive = false;
   }
 }
 
@@ -159,6 +166,7 @@ export async function startHuyaDanmakuListener(
           txt: frontendDanmaku.content,
           duration: commentOptions.duration ?? 12000,
           mode: commentOptions.mode ?? 'scroll',
+          sender: frontendDanmaku.nickname,
           style: {
             ...styleFromOptions,
             color: preferredColor,

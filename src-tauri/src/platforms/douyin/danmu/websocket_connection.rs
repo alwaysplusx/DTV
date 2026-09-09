@@ -32,7 +32,12 @@ const DEFAULT_DOUYIN_WS_HOSTS: &[&str] = &[
     "webcast3-ws-web-lf.douyin.com",
 ];
 
-fn build_wss_query(cursor: &str, internal_ext: &str, user_unique_id: &str, room_id: &str) -> String {
+fn build_wss_query(
+    cursor: &str,
+    internal_ext: &str,
+    user_unique_id: &str,
+    room_id: &str,
+) -> String {
     format!(
         "webcast/im/push/v2/?app_name=douyin_web&version_code=180800&webcast_sdk_version=1.0.14-beta.0&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32&browser_name=Mozilla&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36&browser_online=true&tz_name=Asia/Shanghai&cursor={}&internal_ext={}&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1&user_unique_id={}&im_path=/webcast/im/fetch/&identity=audience&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={}&heartbeatDuration=0",
         cursor, internal_ext, user_unique_id, room_id
@@ -94,7 +99,14 @@ pub async fn connect_and_manage_websocket(
     room_id: &str,
     cookie_header: &str,
     user_unique_id: &str,
-) -> Result<(SplitStream<WsStream>, Sender<WsMessage>, watch::Sender<bool>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (
+        SplitStream<WsStream>,
+        Sender<WsMessage>,
+        watch::Sender<bool>,
+    ),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let ws_cookie_header = cookie_header.to_string();
     let current_timestamp_ms = Utc::now().timestamp_millis();
     let first_req_ms = current_timestamp_ms - 100;
@@ -194,7 +206,8 @@ pub async fn connect_and_manage_websocket(
             .unwrap_or_else(|| "http_status=<none>".to_string());
         return Err(format!(
             "All Douyin WebSocket hosts failed (last_host={}, {}): {}",
-            host, status_part,
+            host,
+            status_part,
             last_err
                 .map(|e| e.to_string())
                 .unwrap_or_else(|| "unknown error".to_string())

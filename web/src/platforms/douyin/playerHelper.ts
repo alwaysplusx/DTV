@@ -215,6 +215,7 @@ export async function startDouyinDanmakuListener(
             txt: frontendDanmaku.content,
             duration: commentOptions.duration ?? 12000,
             mode: commentOptions.mode ?? 'scroll',
+            sender: frontendDanmaku.nickname,
             style: {
               ...styleFromOptions,
               color: preferredColor,
@@ -241,7 +242,7 @@ export async function stopDouyinDanmaku(currentUnlistenFn: (() => void) | null):
     currentUnlistenFn();
   }
   try {
-    await invoke('stop_douyin_danmu_listener');
+    await invoke('stop_douyin_danmu_listener', { roomId: null });
   } catch (error) {
     console.error('[DouyinPlayerHelper] Error stopping Douyin danmaku listener:', error);
   }

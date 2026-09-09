@@ -96,7 +96,10 @@ pub fn parse_like_message(
     match LikeMessage::decode(payload) {
         Ok(like_msg) => {
             if let Some(user) = like_msg.user {
-                debug!("    [Douyin Danmaku] Like: {} x{}", user.nick_name, like_msg.count);
+                debug!(
+                    "    [Douyin Danmaku] Like: {} x{}",
+                    user.nick_name, like_msg.count
+                );
             } else {
                 debug!("    [Douyin Danmaku] Like: x{} (no user)", like_msg.count);
             }
@@ -120,7 +123,10 @@ pub fn parse_room_stats_message(
             Ok(None) // 统计信息通常不作为普通弹幕显示
         }
         Err(e) => {
-            debug!("    [Douyin Danmaku] Failed to parse RoomStatsMessage: {}", e);
+            debug!(
+                "    [Douyin Danmaku] Failed to parse RoomStatsMessage: {}",
+                e
+            );
             Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         }
     }

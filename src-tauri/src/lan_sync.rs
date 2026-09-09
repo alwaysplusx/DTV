@@ -7,8 +7,8 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
 use std::net::TcpListener;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::State;
@@ -57,29 +57,29 @@ pub struct LanSyncPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanSyncSummary {
-  pub followed_streamers: usize,
-  pub follow_folders: usize,
-  pub follow_list_order: usize,
-  pub custom_categories: usize,
-  pub total_bytes: usize,
+    pub followed_streamers: usize,
+    pub follow_folders: usize,
+    pub follow_list_order: usize,
+    pub custom_categories: usize,
+    pub total_bytes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanSyncManifest {
-  pub kind: String,
-  pub version: u32,
-  pub exported_at: String,
-  pub source: LanSyncSource,
-  pub summary: LanSyncSummary,
+    pub kind: String,
+    pub version: u32,
+    pub exported_at: String,
+    pub source: LanSyncSource,
+    pub summary: LanSyncSummary,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanSyncServerInfo {
-  pub port: u16,
-  pub hosts: Vec<String>,
-  pub token: String,
+    pub port: u16,
+    pub hosts: Vec<String>,
+    pub token: String,
 }
 
 #[derive(Default, Clone)]
@@ -164,9 +164,7 @@ fn build_manifest(payload: &LanSyncPayload) -> LanSyncManifest {
 
 fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
     // RFC1918 + loopback + link-local
-    ip.is_loopback()
-        || ip.is_private()
-        || (ip.octets()[0] == 169 && ip.octets()[1] == 254)
+    ip.is_loopback() || ip.is_private() || (ip.octets()[0] == 169 && ip.octets()[1] == 254)
 }
 
 fn is_link_local_ipv4(ip: &Ipv4Addr) -> bool {
@@ -227,7 +225,11 @@ fn extract_peer_ip(req: &HttpRequest) -> Option<IpAddr> {
     req.peer_addr().map(|addr| addr.ip())
 }
 
-fn check_auth(req: &HttpRequest, token: &str, query: &HashMap<String, String>) -> Result<(), HttpResponse> {
+fn check_auth(
+    req: &HttpRequest,
+    token: &str,
+    query: &HashMap<String, String>,
+) -> Result<(), HttpResponse> {
     let peer_ip = extract_peer_ip(req);
     if let Some(ip) = peer_ip {
         if !is_private_ip(&ip) {
@@ -324,7 +326,13 @@ fn build_mdns_instance_name(port: u16) -> String {
         .unwrap_or_else(|_| "dtv".to_string());
     let sanitized = host
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>();
     format!("dtv-sync-{}-{}", sanitized, port)
 }
@@ -447,7 +455,9 @@ pub async fn lan_sync_start_server(
 }
 
 #[tauri::command]
-pub async fn lan_sync_stop_server(state: tauri::State<'_, LanSyncServerState>) -> Result<(), String> {
+pub async fn lan_sync_stop_server(
+    state: tauri::State<'_, LanSyncServerState>,
+) -> Result<(), String> {
     let running = state.0.lock().unwrap().take();
     if let Some(running) = running {
         stop_running(running).await;
@@ -468,12 +478,9 @@ pub async fn lan_sync_status(
 }
 
 #[tauri::command]
-pub async fn lan_sync_token() -> Result<String, String> {
-    Ok(fixed_token())
-}
-
-#[tauri::command]
-pub async fn lan_sync_discover(timeout_ms: Option<u64>) -> Result<Vec<LanSyncDiscoveredPeer>, String> {
+pub async fn lan_sync_discover(
+    timeout_ms: Option<u64>,
+) -> Result<Vec<LanSyncDiscoveredPeer>, String> {
     let timeout_ms = timeout_ms.unwrap_or(1200).clamp(300, 5000);
     let daemon = ServiceDaemon::new().map_err(|e| format!("mDNS init failed: {e}"))?;
     let receiver = daemon

@@ -1,0 +1,158 @@
+.panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* 嵌套进外层卡片时用：只保留内部网格布局 */
+.bare {
+  min-width: 0;
+}
+
+/* 4 级顺序色阶（accent 绿派生；浅色由中绿到深绿，深色由暗绿到亮绿），
+   经 dataviz validate_palette.js --ordinal 校验：ΔL≥0.06、浅档对底面 ≥2:1 */
+:global(:root[data-theme="light"]) {
+  --heat-1: #3fc87d;
+  --heat-2: #1db564;
+  --heat-3: #0e7c40;
+  --heat-4: #0a5c2e;
+}
+:global(:root[data-theme="dark"]) {
+  --heat-1: #145c30;
+  --heat-2: #22c55e;
+  --heat-3: #5ee593;
+  --heat-4: #9cf7c0;
+}
+
+.monthRow {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+  height: 14px;
+}
+
+.monthLabel {
+  /* 与下方格子同 flex 分布（1fr 等分），保证月名落在对应列上方。
+     min-width:0 防止 nowrap 文字按 min-content 撑宽格子导致后续列漂移 */
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--secondary-text);
+  white-space: nowrap;
+  overflow: visible;
+  line-height: 14px;
+}
+
+.grid {
+  display: flex;
+  gap: 3px;
+}
+
+.gutter {
+  flex: 0 0 24px;
+}
+
+.dayGutter {
+  flex: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dayLabel,
+.daySpacer {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.dayLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--secondary-text);
+}
+
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* 网格格随面板宽度等分铺满，保持正方形；图例格仍用基础 11px */
+.week .cell {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  background: var(--platform-active-bg);
+}
+
+.cell[data-level="1"] {
+  background: var(--heat-1);
+}
+
+.cell[data-level="2"] {
+  background: var(--heat-2);
+}
+
+.cell[data-level="3"] {
+  background: var(--heat-3);
+}
+
+.cell[data-level="4"] {
+  background: var(--heat-4);
+}
+
+.cell:hover {
+  outline: 1px solid var(--text-secondary);
+  outline-offset: 0;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.legendLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--secondary-text);
+  margin: 0 2px;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 999;
+  pointer-events: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 11px;
+  box-shadow: var(--shadow-md);
+}
+
+.tooltipTitle {
+  color: var(--primary-text);
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+.tooltipText {
+  color: var(--secondary-text);
+}

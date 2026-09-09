@@ -2,33 +2,25 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
-import { ChevronDown, ExternalLink, LayoutGrid, MonitorSmartphone, Moon, Search, Sun, ThumbsUp, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, Search, Users, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { invoke } from "@tauri-apps/api/core";
 
 import styles from "./Navbar.module.css";
-import { LanSyncModal } from "./LanSyncModal";
-import { searchAnchors, type SearchAnchorResult, type SearchPlatform } from "@/services/search";
+import type { SearchPlatform } from "@/services/search";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { useFollow, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
 import { Platform } from "@/platforms/common/types";
-import { useImageProxy } from "@/hooks/useImageProxy";
+import { PlatformIcon } from "@/components/common/PlatformIcon";
 import { useCustomCategories } from "@/state/customCategories/CustomCategoriesProvider";
 import { usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
+import { useSearchSpotlight } from "@/hooks/useSearchSpotlight";
 
-type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom";
+type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom" | "follows";
 
-type VersionInfo = {
-  version: string;
-  title?: string;
-  notes?: string[];
-  url?: string;
-  published_at?: string;
-};
+const followsPlatform = { id: "follows" as const, name: "关注" };
 
-const GITHUB_RELEASES_URL = "https://github.com/chen-zeong/DTV/releases";
-
-const basePlatforms: Array<{ id: Exclude<UiPlatform, "custom">; name: string }> = [
+const basePlatforms: Array<{ id: Exclude<UiPlatform, "custom" | "follows">; name: string }> = [
   { id: "douyu", name: "斗鱼" },
   { id: "huya", name: "虎牙" },
   { id: "douyin", name: "抖音" },
@@ -74,36 +66,26 @@ function WinCaptionCloseIcon() {
 export function Navbar({
   theme,
   activePlatform,
-  onThemeToggle,
   onPlatformChange
 }: {
   theme: "light" | "dark";
   activePlatform: UiPlatform;
-  onThemeToggle: () => void;
   onPlatformChange: (p: UiPlatform) => void;
 }) {
   const pathname = usePathname();
   const [isWindows, setIsWindows] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
-  const [donateOpen, setDonateOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
-  const [lanSyncOpen, setLanSyncOpen] = useState(false);
-  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
-  const [hasUpdate, setHasUpdate] = useState(false);
-  const [localVersion, setLocalVersion] = useState<string>("");
-
   const playerUi = usePlayerUi();
   const playerOverlay = usePlayerOverlay();
   const follow = useFollow();
-  const { ensureProxyStarted, proxify } = useImageProxy();
   const custom = useCustomCategories();
 
   const showCustomTab = custom.hydrated && custom.entries.length > 0;
   const visiblePlatforms = useMemo(() => {
-    // 对齐老项目：有自定义分区时，自定义入口放在最前面
-    if (showCustomTab) return [customPlatform, ...basePlatforms];
-    return basePlatforms;
+    // 关注页固定最前；有自定义分区时紧随其后（对齐老项目自定义置前的习惯）
+    if (showCustomTab) return [followsPlatform, customPlatform, ...basePlatforms];
+    return [followsPlatform, ...basePlatforms];
   }, [showCustomTab]);
 
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -120,30 +102,51 @@ export function Navbar({
     [highlight]
   );
 
+  // Spotlight 平台 chip 的滑动胶囊在 useSearchSpotlight 内部自管（spans 渲染也搬过去了），
+  // 这里不再需要 ref 与 effect 联动。
+
   const isPlayerRoute = (pathname ?? "").startsWith("/player");
   const isPlayerOpen = isPlayerRoute || playerOverlay.isOpen;
 
-  const navigateToPlayer = useCallback(
+  const openInMain = useCallback(
     (platform: string, roomId: string) => {
       playerOverlay.openPlayer({ platform, roomId });
     },
     [playerOverlay]
   );
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const openInStandalone = useCallback((platform: string, roomId: string) => {
+    void (async () => {
+      try {
+        await invoke("open_player_window_cmd", { platform: String(platform).toLowerCase(), roomId });
+      } catch {
+        // ignore: 没装 tauri / 调用失败都不阻塞
+      }
+    })();
+  }, []);
+
+  const inlinePlatform: SearchPlatform | null = useMemo(() => {
+    if (activePlatform === "bilibili") return "bilibili";
+    if (activePlatform === "huya") return "huya";
+    if (activePlatform === "douyu") return "douyu";
+    return null; // custom / douyin：内联模式暂不搜索
+  }, [activePlatform]);
+
+  const spotlight = useSearchSpotlight({
+    inlinePlatform,
+    activePlatformLabel: activePlatform,
+    onSelectInMain: openInMain,
+    onSelectInStandalone: openInStandalone
+  });
+
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchAnchorResult[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [isLoadingSearch, setIsLoadingSearch] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [playerSearchOpen, setPlayerSearchOpen] = useState(true);
+  const navbarInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isPlayerOpen) {
       setPlayerSearchOpen(false);
-      setSearchQuery("");
-      setSearchResults([]);
-      setSearchError(null);
+      spotlight.actions.close();
       setIsSearchFocused(false);
     } else {
       setPlayerSearchOpen(true);
@@ -154,85 +157,9 @@ export function Navbar({
   const openPlayerSearch = useCallback(() => {
     setPlayerSearchOpen(true);
     window.requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
+      navbarInputRef.current?.focus();
     });
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      // 版本检查不是关键功能：失败不重试、不报错、不提示
-      try {
-        const res = await invoke<any>("check_version_cmd");
-        if (cancelled) return;
-        const local = typeof res?.local_version === "string" ? res.local_version : "";
-        setLocalVersion(local);
-        const remote = res?.remote;
-        if (remote && typeof remote.version === "string" && remote.version.trim()) {
-          const info: VersionInfo = {
-            version: remote.version,
-            title: typeof remote.title === "string" ? remote.title : undefined,
-            notes: Array.isArray(remote.notes) ? remote.notes.filter((x: any) => typeof x === "string") : undefined,
-            url: typeof remote.url === "string" ? remote.url : undefined,
-            published_at: typeof remote.published_at === "string" ? remote.published_at : undefined
-          };
-          setVersionInfo(info);
-        }
-        setHasUpdate(!!res?.has_update);
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const searchPlatform: SearchPlatform | null = useMemo(() => {
-    if (activePlatform === "bilibili") return "bilibili";
-    if (activePlatform === "huya") return "huya";
-    if (activePlatform === "douyu") return "douyu";
-    return null; // custom / douyin：暂不支持统一搜索
-  }, [activePlatform]);
-
-  const placeholderText = useMemo(() => {
-    if (activePlatform === "huya") return "搜索虎牙主播/房间...";
-    if (activePlatform === "bilibili") return "搜索B站直播间...";
-    if (activePlatform === "douyin") return "搜索直播间号";
-    if (activePlatform === "custom") return "搜索：切到具体平台后可用";
-    return "搜索斗鱼主播/房间...";
-  }, [activePlatform]);
-
-  useEffect(() => {
-    const trimmed = searchQuery.trim();
-    setSearchError(null);
-    if (!trimmed || !searchPlatform) {
-      setSearchResults([]);
-      setIsLoadingSearch(false);
-      return;
-    }
-
-    setIsLoadingSearch(true);
-    const id = window.setTimeout(() => {
-      searchAnchors(searchPlatform, trimmed)
-        .then((res) => setSearchResults(res ?? []))
-        .catch((e: any) => {
-          setSearchResults([]);
-          setSearchError(typeof e === "string" ? e : e?.message || "搜索失败");
-        })
-        .finally(() => setIsLoadingSearch(false));
-    }, 220);
-
-    return () => window.clearTimeout(id);
-  }, [searchPlatform, searchQuery]);
-
-  useEffect(() => {
-    if (searchPlatform === "bilibili" || searchPlatform === "huya") {
-      void ensureProxyStarted();
-    }
-  }, [ensureProxyStarted, searchPlatform]);
 
   useEffect(() => {
     let cancelled = false;
@@ -335,45 +262,6 @@ export function Navbar({
     setHighlight({ width: r.width, x: r.left - c.left, opacity: 1 });
   }, [activePlatform]);
 
-  const openExternal = useCallback(async (url: string) => {
-    const raw = String(url || "").trim();
-    if (!raw) return;
-
-    const normalizedUrl = (() => {
-      try {
-        return new URL(raw).toString();
-      } catch {
-        // allow passing github.com/xxx
-        try {
-          return new URL(`https://${raw}`).toString();
-        } catch {
-          return raw;
-        }
-      }
-    })();
-
-    try {
-      await invoke("open_in_default_browser", { url: normalizedUrl });
-      return;
-    } catch {
-      // ignore
-    }
-    try {
-      const opener: any = await import("@tauri-apps/plugin-opener");
-      if (typeof opener?.open === "function") {
-        await opener.open(normalizedUrl);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    try {
-      window.open(normalizedUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore
-    }
-  }, []);
-
   useLayoutEffect(() => {
     updateHighlight();
   }, [updateHighlight, visiblePlatforms.length]);
@@ -401,8 +289,6 @@ export function Navbar({
     return follow.isFollowed(fp, island.roomId);
   }, [follow, island.platform, island.roomId, island.visible]);
 
-  const showResults = isSearchFocused && !!searchQuery.trim();
-
   return (
     <nav className={`${styles.navbar} ${theme === "dark" ? styles.navbarDark : ""}`} data-tauri-drag-region>
       <div className={styles.platformTabsWrap} data-tauri-drag-region>
@@ -425,7 +311,16 @@ export function Navbar({
               }}
               onClick={() => onPlatformChange(p.id)}
             >
-              {p.id === "custom" ? <LayoutGrid size={16} /> : p.name}
+              {p.id === "custom" ? (
+                <LayoutGrid size={16} />
+              ) : p.id === "follows" ? (
+                <Users size={16} />
+              ) : (
+                <>
+                  <PlatformIcon platform={p.id} size={15} />
+                  {p.name}
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -504,8 +399,7 @@ export function Navbar({
       </AnimatePresence>
 
       <div className={styles.actions} data-tauri-drag-region>
-        {activePlatform !== "custom" ? (
-          <div className={styles.searchContainer} data-tauri-drag-region="false">
+        <div className={styles.searchContainer} data-tauri-drag-region="false">
           {isPlayerRoute && !playerSearchOpen ? (
             <m.button
               type="button"
@@ -529,46 +423,30 @@ export function Navbar({
             style={isPlayerRoute ? { maxWidth: "36vw", overflow: "hidden", display: playerSearchOpen ? "inline-flex" : "none" } : undefined}
           >
             <input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={placeholderText}
+              ref={navbarInputRef}
+              value={spotlight.state.query}
+              onChange={(e) => spotlight.state.setQuery(e.target.value)}
+              placeholder={spotlight.actions.placeholder}
               className={styles.searchInput}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => {
-                setIsSearchFocused(false);
-                if (!isPlayerRoute) return;
-                if (searchQuery.trim()) return;
-                window.setTimeout(() => setPlayerSearchOpen(false), 80);
+              onFocus={() => {
+                setIsSearchFocused(true);
+                if (!spotlight.state.isOpen) spotlight.actions.open();
               }}
+              onBlur={() => setIsSearchFocused(false)}
               onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  if (!isPlayerRoute) return;
-                  setSearchQuery("");
-                  setSearchResults([]);
-                  setSearchError(null);
-                  setIsSearchFocused(false);
-                  setPlayerSearchOpen(false);
-                  return;
-                }
-                if (e.key !== "Enter") return;
-                const trimmed = searchQuery.trim();
-                if (!trimmed) return;
-                if (/^\d+$/.test(trimmed)) {
-                  navigateToPlayer(activePlatform, trimmed);
+                if (e.key === "Enter") {
+                  spotlight.actions.submitNumeric(openInMain);
                 }
               }}
             />
-            {searchQuery ? (
+            {spotlight.state.query ? (
               <button
                 type="button"
                 className={styles.searchIconBtn}
                 aria-label="清除搜索"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  setSearchQuery("");
-                  setSearchResults([]);
-                  setSearchError(null);
+                  spotlight.state.setQuery("");
                 }}
               >
                 <X size={14} />
@@ -580,128 +458,14 @@ export function Navbar({
               aria-label="搜索"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                const trimmed = searchQuery.trim();
-                if (!trimmed) return;
-                if (/^\d+$/.test(trimmed)) {
-                  navigateToPlayer(activePlatform, trimmed);
-                }
+                if (!spotlight.state.isOpen) spotlight.actions.open();
+                else spotlight.actions.submitNumeric(openInMain);
               }}
             >
               <Search size={15} />
             </button>
           </m.div>
-
-          {showResults ? (
-            <div className={styles.searchResultsWrapper}>
-              {isLoadingSearch ? <div className={styles.searchMeta}>搜索中...</div> : null}
-              {!isLoadingSearch && searchError ? <div className={styles.searchMeta}>{searchError}</div> : null}
-              {!isLoadingSearch && !searchError && searchResults.length ? (
-                <div className={styles.searchResultsList}>
-                  {searchResults.map((anchor) => (
-                    <div
-                      key={`${anchor.platform}-${anchor.roomId}`}
-                      className={styles.searchResultItem}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        navigateToPlayer(anchor.platform, anchor.roomId);
-                      }}
-                    >
-                      <div className={styles.resultAvatar}>
-                        {anchor.avatar ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            className={styles.resultAvatarImg}
-                            src={anchor.platform === "bilibili" || anchor.platform === "huya" ? proxify(anchor.avatar) : anchor.avatar}
-                            alt={anchor.userName}
-                          />
-                        ) : (
-                          <div className={styles.resultAvatarFallback}>{(anchor.userName || "?").slice(0, 1)}</div>
-                        )}
-                      </div>
-                      <div className={styles.resultMain}>
-                        <div className={styles.resultName} title={anchor.userName}>
-                          {anchor.userName}
-                        </div>
-                        <div className={styles.resultTitle} title={anchor.roomTitle}>
-                          {anchor.roomTitle}
-                        </div>
-                      </div>
-                      <span className={`${styles.liveDot} ${anchor.liveStatus ? styles.liveDotOn : ""}`} aria-hidden="true" />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {!isLoadingSearch && !searchError && !searchResults.length ? (
-                <div className={styles.searchMeta}>
-                  未找到结果
-                  {searchQuery.trim() && /^\d+$/.test(searchQuery.trim()) ? (
-                    <button
-                      type="button"
-                      className={styles.searchFallbackBtn}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        const rid = searchQuery.trim();
-                        navigateToPlayer(activePlatform, rid);
-                      }}
-                    >
-                      进入房间 {searchQuery.trim()}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.versionBtn}
-          title="版本信息"
-          aria-label="版本信息"
-          onClick={() => setUpdateOpen(true)}
-        >
-          <span className={styles.versionText}>v{localVersion || "?"}</span>
-          {hasUpdate ? <span className={styles.badgeNew}>NEW</span> : null}
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.navIconBtn}
-          title="打赏支持"
-          aria-label="打赏"
-          onClick={() => setDonateOpen(true)}
-        >
-          <ThumbsUp size={18} />
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={styles.navIconBtn}
-          title="Data Sync"
-          aria-label="Data Sync"
-          onClick={() => setLanSyncOpen(true)}
-        >
-          <MonitorSmartphone size={18} />
-        </button>
-
-        <button
-          type="button"
-          // eslint-disable-next-line react/no-unknown-property
-          data-tauri-drag-region="false"
-          className={`${styles.themeToggle} ${theme === "dark" ? styles.themeToggleDark : styles.themeToggleLight}`}
-          onClick={onThemeToggle}
-          aria-label={theme === "dark" ? "切换到浅色" : "切换到深色"}
-        >
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        </div>
 
         {isWindows ? (
           <div className={styles.winControls} data-tauri-drag-region="false" aria-label="Window controls">
@@ -718,98 +482,8 @@ export function Navbar({
         ) : null}
       </div>
 
-      <AnimatePresence>
-        {donateOpen ? (
-          <m.div
-            className={styles.overlayBackdrop}
-            // eslint-disable-next-line react/no-unknown-property
-            data-tauri-drag-region="false"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={() => setDonateOpen(false)}
-          >
-            <m.div
-              className={styles.overlayCard}
-              initial={{ opacity: 0, y: 10, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className={styles.overlayHeader}>
-                <div className={styles.overlayTitle}>打赏支持</div>
-                <button type="button" className={styles.overlayClose} onClick={() => setDonateOpen(false)} aria-label="关闭">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className={styles.overlayBody}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className={styles.qrImage} src="/wechat.jpg" alt="微信赞赏码" />
-              </div>
-            </m.div>
-          </m.div>
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {updateOpen ? (
-          <m.div
-            className={styles.overlayBackdrop}
-            // eslint-disable-next-line react/no-unknown-property
-            data-tauri-drag-region="false"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={() => setUpdateOpen(false)}
-          >
-            <m.div
-              className={styles.overlayCard}
-              initial={{ opacity: 0, y: 10, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className={styles.overlayHeader}>
-                <div className={styles.overlayTitle}>
-                  {hasUpdate && versionInfo ? versionInfo.title || `发现新版本 v${versionInfo.version}` : "版本信息"}
-                </div>
-                <button type="button" className={styles.overlayClose} onClick={() => setUpdateOpen(false)} aria-label="关闭">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className={styles.overlayBody}>
-                <div className={styles.updateMeta}>
-                  <span>当前版本：v{localVersion || "?"}</span>
-                  {hasUpdate && versionInfo ? <span>最新版本：v{versionInfo.version}</span> : <span>已是最新</span>}
-                  {hasUpdate && versionInfo?.published_at ? <span>发布日期：{versionInfo.published_at}</span> : null}
-                </div>
-                {hasUpdate && versionInfo?.notes?.length ? (
-                  <ul className={styles.updateNotes}>
-                    {versionInfo.notes.map((n) => (
-                      <li key={n}>{n}</li>
-                    ))}
-                  </ul>
-                ) : null}
-
-                <div className={styles.updateActions}>
-                  <button
-                    type="button"
-                    className={styles.primaryBtn}
-                    onClick={() => void openExternal((versionInfo?.url || GITHUB_RELEASES_URL) as string)}
-                  >
-                    <ExternalLink size={16} />
-                    {hasUpdate ? "打开下载页" : "打开 GitHub"}
-                  </button>
-                </div>
-              </div>
-            </m.div>
-          </m.div>
-        ) : null}
-      </AnimatePresence>
-
-      <LanSyncModal open={lanSyncOpen} onClose={() => setLanSyncOpen(false)} appVersion={localVersion} />
+      {/* Spotlight 浮层（状态在 useSearchSpotlight 内统一管理） */}
+      {spotlight.renderSpotlight()}
     </nav>
   );
 }

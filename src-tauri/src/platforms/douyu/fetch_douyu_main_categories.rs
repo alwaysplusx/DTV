@@ -195,7 +195,8 @@ async fn fetch_categories_douyu_raw() -> Result<Vec<RawFrontendCate1Item>, Strin
                                             }
                                         }
                                         //硬编码加入“娱乐天地”下的“一起看”分类
-                                        if 2 == raw_c1_item.id {//娱乐天地 yl 2
+                                        if 2 == raw_c1_item.id {
+                                            //娱乐天地 yl 2
                                             c1_specific_cate2_list.push(RawFrontendCate2Item {
                                                 id: 208.to_string(),
                                                 name: "一起看".to_string(),

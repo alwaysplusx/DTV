@@ -1,0 +1,380 @@
+.root {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.summaryCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.summaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.summaryMeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.summaryLabel { font-size: 11px; color: var(--secondary-text); font-weight: 700; }
+.summaryValue { font-size: 18px; font-weight: 800; color: var(--primary-text); }
+.summaryHint { font-size: 11px; color: var(--secondary-text); }
+
+/* 预设 Tabs（今日/本周/本月/自定义） */
+.presetTabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  width: max-content;
+}
+
+.presetTab {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--secondary-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.presetTab:hover { color: var(--primary-text); }
+
+.presetTabActive {
+  background: var(--accent);
+  color: #fff;
+}
+
+.presetTabActive:hover { color: #fff; }
+
+/* 自定义日期区间 */
+.customRange {
+  display: inline-flex;
+  align-items: center;
+  gap: 15px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  width: max-content;
+}
+
+.customRangeLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--secondary-text);
+  font-weight: 700;
+}
+
+.customRangeInput {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--primary-text);
+  outline: none;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] .customRangeInput {
+  color-scheme: light;
+}
+
+/* ── 区间统计块 ─────────────────────────────── */
+.rangeRoot { display: flex; flex-direction: column; gap: 18px; }
+
+.rangeHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rangeTitle {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rangeHeadReset {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--secondary-text);
+  cursor: pointer;
+}
+
+.rangeHeadReset:hover { color: var(--primary-text); }
+
+.rangeTotal {
+  font-size: 13px;
+  color: var(--secondary-text);
+  font-weight: 700;
+}
+
+/* ── 365 天热力图区块 ────────────────────────────── */
+.section,
+.heatSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary-text);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.refreshBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  color: var(--secondary-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.refreshBtn:hover {
+  color: var(--primary-text);
+  background: var(--platform-active-bg);
+}
+
+.refreshSpin svg {
+  animation: refresh-rotate 0.8s linear infinite;
+}
+
+@keyframes refresh-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── 直条图 ─────────────────────────────────── */
+.barChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 12px 12px;
+  min-height: 148px;
+}
+
+.barChartInDay {
+  /* 日颗粒的 30 bar 也可以用更细的间隙 */
+  gap: 1px;
+}
+
+.barItem {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0 0 4px;
+}
+
+.barItem:hover .barItemFill { opacity: 0.9; }
+
+.barItemTrack {
+  position: relative;
+  flex: 1;
+  min-height: 90px;
+  max-height: 120px;
+  background: var(--platform-active-bg);
+  border-radius: 6px;
+}
+
+.barItemFill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 0%;
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  transition: height 0.2s ease;
+}
+
+.barItemFillEmpty {
+  background: transparent;
+}
+
+.barItemLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--secondary-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.barItemSelected .barItemTrack {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.barItemSelected .barItemLabel { color: var(--accent); }
+
+/* ── 主播排行 ───────────────────────────────── */
+.streamerList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.streamerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--primary-text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.streamerRow:hover { background: var(--hover-bg); }
+
+.streamerRowRank {
+  width: 22px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--secondary-text);
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.streamerRowAvatar,
+.streamerAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.streamerRowAvatarFallback,
+.streamerAvatarFallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.streamerRowMeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.streamerRowName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.streamerRowSub { font-size: 11px; color: var(--secondary-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.streamerRowDuration { font-size: 14px; font-weight: 800; color: var(--accent); flex-shrink: 0; }
+
+.streamerHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+}
+.streamerAvatar { width: 44px; height: 44px; }
+.streamerAvatarFallback { width: 44px; height: 44px; font-size: 15px; }
+.streamerHeaderMeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.streamerName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--primary-text);
+}
+.streamerHeaderSub { font-size: 11px; color: var(--secondary-text); }
+.latestLiveHint { margin-left: auto; font-size: 11px; color: var(--secondary-text); }
+
+/* ── 空态 ─────────────────────────────────────── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 60px 20px;
+  color: var(--secondary-text);
+  text-align: center;
+}
+.emptyTitle { font-size: 17px; font-weight: 800; color: var(--primary-text); }
+.emptyText { font-size: 12px; }

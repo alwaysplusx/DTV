@@ -41,12 +41,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
     setSystemTheme(getSystemTheme());
 
-    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (!media) return;
+    // 跨窗口同步：主窗口切主题时，独立窗口（如运行日志）跟随
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORE_KEY) return;
+      const v = e.newValue;
+      if (v === "light" || v === "dark" || v === "system") {
+        setUserPreferenceState(v);
+      }
+    };
+    window.addEventListener("storage", onStorage);
 
-    const handler = (e: MediaQueryListEvent) => setSystemTheme(e.matches ? "dark" : "light");
-    media.addEventListener("change", handler);
-    return () => media.removeEventListener("change", handler);
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (media) {
+      const handler = (e: MediaQueryListEvent) => setSystemTheme(e.matches ? "dark" : "light");
+      media.addEventListener("change", handler);
+      return () => {
+        media.removeEventListener("change", handler);
+        window.removeEventListener("storage", onStorage);
+      };
+    }
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const effectiveTheme: EffectiveTheme = userPreference === "system" ? systemTheme : userPreference;

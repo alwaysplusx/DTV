@@ -13,6 +13,8 @@ export type FollowedStreamer = {
   roomTitle?: string;
   currentRoomId: string;
   liveStatus: "UNKNOWN" | "LIVE" | "OFFLINE";
+  coverUrl?: string;
+  viewerCountStr?: string;
 };
 
 export interface FollowFolder {

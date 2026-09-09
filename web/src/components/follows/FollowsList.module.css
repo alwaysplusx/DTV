@@ -267,7 +267,7 @@
 
 :global(:root[data-theme="light"]) .avatar {
   background: rgba(15, 23, 42, 0.04);
-  border: 2px solid rgba(16, 185, 129, 0.3);
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .avatarImg {
@@ -311,11 +311,7 @@
 }
 
 .streamerItem:hover .name {
-  color: rgba(52, 211, 153, 1);
-}
-
-:global(:root[data-theme="light"]) .streamerItem:hover .name {
-  color: rgba(16, 185, 129, 1);
+  color: var(--accent-hover);
 }
 
 .sub {
@@ -356,7 +352,7 @@
 }
 
 .liveDotLive {
-  background: #10b981;
+  background: var(--accent);
 }
 
 .liveDotUnknown {
@@ -410,6 +406,8 @@
 
 .folderItem {
   position: relative;
+  /* 对齐 .listItemWrapper 的层级：条目需盖在 z-index:0 的 hoverHighlight 上方 */
+  z-index: 1;
   margin-bottom: 8px;
   border-radius: 24px;
   background: var(--color-card);
@@ -702,6 +700,13 @@
   border-color: rgba(148, 163, 184, 0.6);
 }
 
+/* 亮色激活态须抬高特异性，否则被上面的浅色 filterChip 覆盖压掉强调色 */
+:global(:root[data-theme="light"]) .filterChip.filterChipActive {
+  background: var(--accent-gradient);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
+  color: white;
+}
+
 .followOverlayActions {
   display: flex;
   align-items: center;
@@ -915,6 +920,60 @@
   background: rgba(255, 64, 64, 1);
 }
 
+/* 主列表项：悬停显示取关按钮（两段式确认；默认圆形 ×，确认态展开为红色 pill） */
+.itemRemoveBtn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.92);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease, border-radius 0.15s ease;
+}
+
+.listItemWrapper:hover .itemRemoveBtn,
+.itemRemoveBtnConfirm {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+.itemRemoveBtn:hover {
+  background: var(--accent-hover);
+}
+
+.itemRemoveBtn:focus-visible {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.itemRemoveBtnConfirm {
+  width: auto;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.itemRemoveBtnLabel {
+  letter-spacing: 0.04em;
+}
+
 .modalBackdrop {
   position: fixed;
   inset: 0;
@@ -1075,4 +1134,121 @@
 
 .menuDanger {
   color: rgba(255, 96, 96, 1);
+}
+
+/* 当前正在播放的项：仅保留背景与头像光环，昵称走强调色渐变 */
+.streamerItemActive {
+  position: relative;
+  background: var(--accent-glow);
+}
+
+.streamerItemActive .name {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 800;
+}
+
+:global(:root[data-theme="light"]) .streamerItemActive {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* 播放中房间：头像光环呼吸（外圈强调色环缓慢收放，静态基准与原样式一致） */
+.avatarActive {
+  --avatar-ring-soft: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  --avatar-ring-strong: 0 0 0 3px color-mix(in srgb, var(--accent) 42%, transparent);
+  border-color: var(--accent);
+  box-shadow: var(--avatar-ring-soft);
+  animation: avatarActiveBreath 2.6s ease-in-out infinite;
+}
+
+:global(:root[data-theme="light"]) .avatarActive {
+  --avatar-ring-soft: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+  --avatar-ring-strong: 0 0 0 3px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+@keyframes avatarActiveBreath {
+
+  0%,
+  100% {
+    box-shadow: var(--avatar-ring-soft);
+  }
+
+  50% {
+    box-shadow: var(--avatar-ring-strong);
+  }
+}
+
+/* 呼吸为纯装饰动画：用户偏好减少动态时退回静态光环 */
+@media (prefers-reduced-motion: reduce) {
+  .avatarActive {
+    animation: none;
+  }
+}
+
+/* 直播中的主播：昵称用强调色，与 LIVE 状态点视觉形成主从搭配 */
+.nameLive {
+  color: var(--accent-hover);
+}
+
+.followOverlayCardActive {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+
+.followOverlayCardActive .resultName {
+  color: var(--accent-hover);
+}
+
+.followOverlayCardActive:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+:global(:root[data-theme="light"]) .followOverlayCardActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* 侧栏收起成迷你条时的昵称+标题整块折叠动画：左移淡出，时长与宽度动画同源 var(--sidebar-anim)。
+   Sidebar 在收起那一刻(t0)就置 data-collapsed，文字因此与抽屉收窄同步、不滞后；
+   展开时列表整块重挂载、行自带 framer 入场动画，无需反向规则。
+   仅作用于文字块(.meta)，头像列保持不动，折叠末段只剩头像列即与迷你条接管衔接 */
+.followList .meta {
+  transition: opacity var(--sidebar-anim), transform var(--sidebar-anim);
+}
+
+.followList[data-collapsed="true"] .meta {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+/* 文件夹头文字标签同节奏收拢，避免只裁不淡的硬切（与主播行文字折叠保持一致） */
+.followList .folderName {
+  transition: color 0.2s ease, opacity var(--sidebar-anim);
+}
+
+.followList .folderCount {
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    opacity var(--sidebar-anim);
+}
+
+.followList[data-collapsed="true"] .folderName,
+.followList[data-collapsed="true"] .folderCount {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .followList .meta,
+  .followList .folderName,
+  .followList .folderCount {
+    transition: none;
+  }
 }

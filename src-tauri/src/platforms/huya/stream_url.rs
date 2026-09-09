@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,17 +8,16 @@ use bytes04::Bytes;
 use md5::{Digest, Md5};
 use rand::Rng;
 use regex::Regex;
-use reqwest::header::{
-    HeaderMap, HeaderValue, ACCEPT, ORIGIN, REFERER, USER_AGENT,
-};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ORIGIN, REFERER, USER_AGENT};
 use serde::Serialize;
 use serde_json::Value;
-use tauri::State;
 use tars_stream::prelude::*;
+use tauri::State;
 
 use crate::platforms::common::FollowHttpClient;
 
-const DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0";
+const DESKTOP_UA: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0";
 // Align with pure_live-master (HuyaSite.HYSDK_UA)
 const HUYA_HYSDK_UA: &str =
     "HYSDK(Windows,30000002)_APP(pc_exe&7080000&official)_SDK(trans&2.34.0.5795)";
@@ -44,6 +43,8 @@ pub struct HuyaUnifiedResponse {
     pub is_live: bool,
     pub flv_tx_urls: Vec<HuyaUnifiedStreamEntry>,
     pub selected_url: Option<String>,
+    pub cover_url: Option<String>,
+    pub viewer_count_str: Option<String>,
 }
 
 fn md5_hex(input: &str) -> String {
@@ -146,9 +147,7 @@ fn build_huya_anti_code(
         .cloned()
         .ok_or_else(|| "missing wsTime in anti code".to_string())?;
 
-    let secret_str = format!(
-        "{secret_prefix}_{calc_uid}_{stream_name}_{secret_hash}_{ws_time}"
-    );
+    let secret_str = format!("{secret_prefix}_{calc_uid}_{stream_name}_{secret_hash}_{ws_time}");
     let ws_secret = md5_hex(&secret_str);
 
     let fs = params
@@ -248,11 +247,11 @@ impl DecodeTars for HuyaUserId {
 
 #[derive(Clone, Debug, Default)]
 struct GetCdnTokenExReq {
-    s_flv_url: String,    // tag 0
+    s_flv_url: String,     // tag 0
     s_stream_name: String, // tag 1
-    i_loop_time: i32,     // tag 2
-    t_id: HuyaUserId,     // tag 3
-    i_app_id: i32,        // tag 4
+    i_loop_time: i32,      // tag 2
+    t_id: HuyaUserId,      // tag 3
+    i_app_id: i32,         // tag 4
 }
 
 impl ClassName for GetCdnTokenExReq {
@@ -344,15 +343,9 @@ fn encode_tars_request_packet(
     tup_payload: Bytes,
 ) -> Result<Vec<u8>, String> {
     let mut encoder = TarsEncoder::new();
-    encoder
-        .write_int16(1, 3)
-        .map_err(|e| e.to_string())?; // TUPVERSION
-    encoder
-        .write_int8(2, 0)
-        .map_err(|e| e.to_string())?; // cPacketType
-    encoder
-        .write_int32(3, 0)
-        .map_err(|e| e.to_string())?; // iMessageType
+    encoder.write_int16(1, 3).map_err(|e| e.to_string())?; // TUPVERSION
+    encoder.write_int8(2, 0).map_err(|e| e.to_string())?; // cPacketType
+    encoder.write_int32(3, 0).map_err(|e| e.to_string())?; // iMessageType
     encoder
         .write_int32(4, request_id)
         .map_err(|e| e.to_string())?;
@@ -365,17 +358,11 @@ fn encode_tars_request_packet(
     encoder
         .write_bytes(7, &tup_payload)
         .map_err(|e| e.to_string())?;
-    encoder
-        .write_int32(8, 0)
-        .map_err(|e| e.to_string())?; // timeout
+    encoder.write_int32(8, 0).map_err(|e| e.to_string())?; // timeout
 
     let empty: BTreeMap<String, String> = BTreeMap::new();
-    encoder
-        .write_map(9, &empty)
-        .map_err(|e| e.to_string())?;
-    encoder
-        .write_map(10, &empty)
-        .map_err(|e| e.to_string())?;
+    encoder.write_map(9, &empty).map_err(|e| e.to_string())?;
+    encoder.write_map(10, &empty).map_err(|e| e.to_string())?;
 
     let body = encoder.to_bytes();
     let total_len = (body.len() + 4) as u32;
@@ -396,8 +383,9 @@ fn decode_tars_response_packet_payload(payload: &[u8]) -> Result<(i32, Bytes, St
             let _ = decoder.read_int32(4, false, 0);
             if let Ok(ret) = decoder.read_int32(5, false, -1) {
                 if let Ok(s_buffer) = decoder.read_bytes(6, false, Bytes::new()) {
-                    let _status: BTreeMap<String, String> =
-                        decoder.read_map(7, false, BTreeMap::new()).unwrap_or_default();
+                    let _status: BTreeMap<String, String> = decoder
+                        .read_map(7, false, BTreeMap::new())
+                        .unwrap_or_default();
                     let result_desc = decoder
                         .read_string(8, false, "".to_string())
                         .unwrap_or_default();
@@ -425,10 +413,12 @@ fn decode_tars_response_packet_payload(payload: &[u8]) -> Result<(i32, Bytes, St
         .read_bytes(7, false, Bytes::new())
         .map_err(|e| e.to_string())?;
     let _timeout = decoder.read_int32(8, false, 0).unwrap_or(0);
-    let _context: BTreeMap<String, String> =
-        decoder.read_map(9, false, BTreeMap::new()).unwrap_or_default();
-    let _status: BTreeMap<String, String> =
-        decoder.read_map(10, false, BTreeMap::new()).unwrap_or_default();
+    let _context: BTreeMap<String, String> = decoder
+        .read_map(9, false, BTreeMap::new())
+        .unwrap_or_default();
+    let _status: BTreeMap<String, String> = decoder
+        .read_map(10, false, BTreeMap::new())
+        .unwrap_or_default();
 
     Ok((0, s_buffer, "".to_string()))
 }
@@ -543,7 +533,8 @@ async fn huya_get_cdn_token_info_ex(
 
     // Prefer matching class name; otherwise try decode from any inner payload.
     if let Some(v) = inner.get("GetCdnTokenExResp") {
-        let rsp: GetCdnTokenExResp = TarsDecoder::individual_decode(v).map_err(|e| e.to_string())?;
+        let rsp: GetCdnTokenExResp =
+            TarsDecoder::individual_decode(v).map_err(|e| e.to_string())?;
         if rsp.s_flv_token.trim().is_empty() {
             return Err("Huya WUP returned empty token".to_string());
         }
@@ -594,6 +585,8 @@ struct RoomDetail {
     title: Option<String>,
     nick: Option<String>,
     avatar180: Option<String>,
+    cover_url: Option<String>,
+    viewer_count_str: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -644,6 +637,15 @@ fn parse_i64_lossy(v: Option<&Value>) -> i64 {
     }
 }
 
+// Same display format as live_list.rs: plain number until 1万, then "x.x万".
+fn format_wan_count(n: i64) -> String {
+    if n >= 10_000 {
+        format!("{:.1}万", (n as f64) / 10_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
 fn extract_room_detail(profile: &Value) -> RoomDetail {
     let status_code = profile.get("status").and_then(|x| x.as_i64()).unwrap_or(0);
     if status_code != 200 {
@@ -652,6 +654,8 @@ fn extract_room_detail(profile: &Value) -> RoomDetail {
             title: None,
             nick: None,
             avatar180: None,
+            cover_url: None,
+            viewer_count_str: None,
         };
     }
 
@@ -691,11 +695,30 @@ fn extract_room_detail(profile: &Value) -> RoomDetail {
         })
         .map(|s| s.to_string());
 
+    let cover_url = data
+        .get("liveData")
+        .and_then(|ld| ld.get("screenshot"))
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string());
+
+    let live_data = data.get("liveData");
+    let audience_count = live_data
+        .and_then(|ld| ld.get("audienceCount").or_else(|| ld.get("liveCount")))
+        .map(|v| parse_i64_lossy(Some(v)))
+        .unwrap_or(0);
+    let viewer_count_str = if audience_count > 0 {
+        Some(format_wan_count(audience_count))
+    } else {
+        None
+    };
+
     RoomDetail {
         status: stream_ok,
         title,
         nick,
         avatar180,
+        cover_url,
+        viewer_count_str,
     }
 }
 
@@ -704,7 +727,9 @@ fn extract_stream_candidates(profile: &Value) -> Result<Vec<WebStreamCandidate>,
     if status_code != 200 {
         return Ok(Vec::new());
     }
-    let data = profile.get("data").ok_or_else(|| "missing data".to_string())?;
+    let data = profile
+        .get("data")
+        .ok_or_else(|| "missing data".to_string())?;
 
     let base_list = data
         .get("stream")
@@ -735,7 +760,11 @@ fn extract_stream_candidates(profile: &Value) -> Result<Vec<WebStreamCandidate>,
             .unwrap_or_default();
         let presenter_uid = {
             let v = parse_i64_lossy(item.get("lChannelId"));
-            if v != 0 { v } else { fallback_presenter_uid }
+            if v != 0 {
+                v
+            } else {
+                fallback_presenter_uid
+            }
         };
 
         if cdn.is_empty() || flv_url.is_empty() || stream_name.is_empty() || presenter_uid == 0 {
@@ -900,7 +929,11 @@ fn pick_stream_url(
 
     let candidate_index = preferred_index.unwrap_or(0);
     // URL is built later (needs WUP token); keep index selection behavior.
-    let fake_url = if let Some(r) = ratio { format!("ratio={r}") } else { "ratio=0".to_string() };
+    let fake_url = if let Some(r) = ratio {
+        format!("ratio={r}")
+    } else {
+        "ratio=0".to_string()
+    };
     Some((fake_url, candidate_index))
 }
 
@@ -969,6 +1002,8 @@ pub async fn get_huya_unified_cmd(
                 is_live: detail.status || web_stream.is_live,
                 flv_tx_urls: Vec::new(),
                 selected_url: None,
+                cover_url: detail.cover_url.clone(),
+                viewer_count_str: detail.viewer_count_str.clone(),
             });
         }
     };
@@ -983,6 +1018,8 @@ pub async fn get_huya_unified_cmd(
             is_live: detail.status || web_stream.is_live,
             flv_tx_urls: Vec::new(),
             selected_url: None,
+            cover_url: detail.cover_url.clone(),
+            viewer_count_str: detail.viewer_count_str.clone(),
         });
     };
 
@@ -1013,7 +1050,7 @@ pub async fn get_huya_unified_cmd(
 
     let tx_entries = build_flv_tx_urls(&base_url, hd, sd);
     let is_live = detail.status || web_stream.is_live;
-    println!(
+    log::info!(
         "[Huya] requested quality: {:?}, resolved ratio: {:?}, preferred line: {:?}, selected line: {:?}",
         quality,
         ratio,
@@ -1033,6 +1070,8 @@ pub async fn get_huya_unified_cmd(
         is_live,
         flv_tx_urls: tx_entries,
         selected_url: Some(selected_url),
+        cover_url: detail.cover_url.clone(),
+        viewer_count_str: detail.viewer_count_str.clone(),
     })
 }
 #[allow(dead_code)]

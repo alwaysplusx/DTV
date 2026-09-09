@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { m } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
+import { X } from "lucide-react";
 
 import styles from "./CustomHomePage.module.css";
 import { CommonStreamerList } from "@/components/streamers/CommonStreamerList";
+import { PlatformIcon } from "@/components/common/PlatformIcon";
 import { useCustomCategories, type CustomCategoryEntry } from "@/state/customCategories/CustomCategoriesProvider";
 import { douyinCategoriesData } from "@/platforms/douyin/douyinCategoriesData";
 import { huyaCategoriesData } from "@/platforms/huya/huyaCategoriesData";
@@ -20,7 +22,7 @@ function platformLabel(p: string) {
 }
 
 export function CustomHomePage() {
-  const { entries } = useCustomCategories();
+  const { entries, removeByKey } = useCustomCategories();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,30 +90,60 @@ export function CustomHomePage() {
 
       {entries.length ? (
         <div className={styles.list}>
-          {entries.map((entry) => {
-            const active = entry.key === selectedKey;
-            const platformClass =
-              entry.platform === "douyu"
-                ? styles.platformDouyu
-                : entry.platform === "douyin"
-                  ? styles.platformDouyin
-                  : entry.platform === "huya"
-                    ? styles.platformHuya
-                    : styles.platformBilibili;
+          <AnimatePresence initial={false}>
+            {entries.map((entry) => {
+              const active = entry.key === selectedKey;
+              const platformClass =
+                entry.platform === "douyu"
+                  ? styles.platformDouyu
+                  : entry.platform === "douyin"
+                    ? styles.platformDouyin
+                    : entry.platform === "huya"
+                      ? styles.platformHuya
+                      : styles.platformBilibili;
 
-            return (
-              <m.button
-                key={entry.key}
-                type="button"
-                className={`${styles.chip} ${platformClass} ${active ? styles.chipActive : ""}`}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setSelectedKey(entry.key)}
-              >
-                <span className={styles.chipPlatform}>{platformLabel(entry.platform)}</span>
-                <span className={styles.chipName}>{entry.cate2Name}</span>
-              </m.button>
-            );
-          })}
+              return (
+                <m.div
+                  key={entry.key}
+                  layout
+                  className={`${styles.chip} ${platformClass} ${active ? styles.chipActive : ""}`}
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.16, ease: [0.4, 0, 0.2, 1] } }}
+                  transition={{ duration: 0.18, ease: [0.22, 0.61, 0.36, 1] }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setSelectedKey(entry.key)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedKey(entry.key);
+                    }
+                  }}
+                  title={platformLabel(entry.platform)}
+                >
+                  <span className={styles.chipPlatform}>
+                    <PlatformIcon platform={entry.platform} size={12} />
+                  </span>
+                  <span className={styles.chipName}>{entry.cate2Name}</span>
+                  <button
+                    type="button"
+                    data-slot="button"
+                    className={styles.chipRemoveBtn}
+                    title="取消订阅"
+                    aria-label={`取消订阅 ${entry.cate2Name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeByKey(entry.key);
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </m.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
       ) : null}
 

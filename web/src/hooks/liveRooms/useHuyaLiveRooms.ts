@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommonStreamer } from "@/platforms/common/streamerTypes";
+import { appendHuyaCoverParams } from "@/platforms/huya/coverParams";
 import { useImageProxy } from "@/hooks/useImageProxy";
 
 export interface UseHuyaLiveRoomsOptions {
@@ -24,14 +25,6 @@ export function useHuyaLiveRooms(gid: string | null, options: UseHuyaLiveRoomsOp
 
   const canFetch = useMemo(() => !!gid, [gid]);
 
-  const huyaCoverParams =
-    "x-oss-process=image/resize,limit_0,m_fill,w_338,h_190/sharpen,80/format,jpg/interlace,1/quality,q_90";
-  const appendHuyaCoverParams = useCallback((url: string) => {
-    if (!url) return url;
-    if (url.includes("x-oss-process=")) return url;
-    return url.includes("?") ? `${url}&${huyaCoverParams}` : `${url}?${huyaCoverParams}`;
-  }, []);
-
   const mapHuyaItemToCommonStreamer = useCallback(
     (item: any): CommonStreamer => {
       const viewers = typeof item.lUserCount === "number" ? item.lUserCount : 0;
@@ -46,7 +39,7 @@ export function useHuyaLiveRooms(gid: string | null, options: UseHuyaLiveRoomsOp
         platform: "huya"
       };
     },
-    [appendHuyaCoverParams, proxify]
+    [proxify]
   );
 
   const fetchRooms = useCallback(

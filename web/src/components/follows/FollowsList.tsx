@@ -1,110 +1,39 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
-import { invoke } from "@tauri-apps/api/core";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, m, useMotionValue, useSpring } from "framer-motion";
 import { Check, ChevronDown, Folder, FolderPlus, ListCollapse, RotateCw, Users, X } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import styles from "./FollowsList.module.css";
-import { Platform as PlatformEnum } from "@/platforms/common/types";
 import { useFollow, type FollowListItem, type FollowedStreamer, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
 import { useImageProxy } from "@/hooks/useImageProxy";
 import { usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
+import { useActiveRoom } from "@/components/follows/useActiveRoom";
+import { useMultiview } from "@/state/multiview/MultiviewProvider";
+import { MultiviewSlotPicker, type SlotPickerAnchor } from "@/components/player/multiview/MultiviewSlotPicker";
+import { useFollowRefresh } from "@/state/follow/FollowRefreshProvider";
+import { invoke } from "@tauri-apps/api/core";
 
-const FOLLOW_REFRESH_CONCURRENCY = 2;
-const REFRESH_INITIAL_DELAY_MS = 1500;
 const DRAG_PREP_DELAY_MS = 150;
 const DRAG_MIN_PX = 8;
 
-function normalizeFollowKey(key: string) {
+export function normalizeFollowKey(key: string) {
   const [p, id] = String(key || "").split(":");
   return `${String(p || "").toUpperCase()}:${String(id || "")}`;
 }
 
-function normalizeLiveStatus(isLive: boolean | null | undefined): FollowedStreamer["liveStatus"] {
-  if (isLive === true) return "LIVE";
-  if (isLive === false) return "OFFLINE";
-  return "UNKNOWN";
-}
-
-async function refreshOne(streamer: FollowedStreamer) {
-  if (streamer.platform === "DOUYU") {
-    const info = await invoke<any>("fetch_douyu_room_info", { roomId: streamer.id });
-    const showStatus = typeof info?.show_status === "number" ? info.show_status : Number(info?.show_status ?? 0);
-    const rawVideoLoop = info?.video_loop ?? info?.videoLoop ?? null;
-    const videoLoop =
-      typeof rawVideoLoop === "number" ? rawVideoLoop : rawVideoLoop === null || typeof rawVideoLoop === "undefined" ? null : Number(rawVideoLoop);
-
-    // Douyu: show_status === 1 需要结合 video_loop 判断；未知值一律不展示“在线”以避免误判
-    let liveStatus: FollowedStreamer["liveStatus"] = "OFFLINE";
-    if (showStatus === 1) {
-      if (videoLoop === 0) liveStatus = "LIVE";
-      else if (videoLoop === 1) liveStatus = "OFFLINE";
-      else liveStatus = "UNKNOWN";
-    }
-    return {
-      nickname: info?.nickname ?? streamer.nickname,
-      avatarUrl: info?.avatar_url ?? streamer.avatarUrl,
-      roomTitle: info?.room_name ?? info?.roomName ?? streamer.roomTitle,
-      liveStatus
-    } satisfies Partial<FollowedStreamer>;
-  }
-
-  if (streamer.platform === "HUYA") {
-    try {
-      const info = await invoke<any>("get_huya_unified_cmd", { roomId: streamer.id, quality: null, line: null });
-      return {
-        nickname: info?.nick ?? streamer.nickname,
-        avatarUrl: info?.avatar ?? streamer.avatarUrl,
-        roomTitle: info?.title ?? streamer.roomTitle,
-        liveStatus: normalizeLiveStatus(!!info?.is_live)
-      } satisfies Partial<FollowedStreamer>;
-    } catch (e: any) {
-      const msg = typeof e === "string" ? e : e?.message || "";
-      if (msg.includes("主播未开播或获取虎牙房间详情失败")) {
-        return { liveStatus: "OFFLINE" } satisfies Partial<FollowedStreamer>;
-      }
-      throw e;
-    }
-  }
-
-  if (streamer.platform === "BILIBILI") {
-    const payload = { platform: PlatformEnum.BILIBILI, args: { room_id_str: streamer.id } };
-    const cookie = typeof localStorage !== "undefined" ? localStorage.getItem("bilibili_cookie") || null : null;
-    const info = await invoke<any>("fetch_bilibili_streamer_info", { payload, cookie });
-    const live = Number(info?.status ?? 0) === 1;
-    return {
-      nickname: info?.anchor_name ?? streamer.nickname,
-      avatarUrl: info?.avatar ?? streamer.avatarUrl,
-      roomTitle: info?.title ?? streamer.roomTitle,
-      liveStatus: normalizeLiveStatus(live)
-    } satisfies Partial<FollowedStreamer>;
-  }
-
-  if (streamer.platform === "DOUYIN") {
-    const payload = { platform: PlatformEnum.DOUYIN, args: { room_id_str: streamer.id } };
-    const info = await invoke<any>("fetch_douyin_streamer_info", { payload });
-    const status = Number(info?.status ?? 0);
-    // Douyin: status === 2 means live (align with player/follow helpers)
-    const live = status === 2;
-    return {
-      nickname: info?.anchor_name ?? streamer.nickname,
-      avatarUrl: info?.avatar ?? streamer.avatarUrl,
-      roomTitle: info?.title ?? streamer.roomTitle,
-      liveStatus: normalizeLiveStatus(live)
-    } satisfies Partial<FollowedStreamer>;
-  }
-
-  return {} satisfies Partial<FollowedStreamer>;
-}
-
-export function FollowsList() {
-  const pathname = usePathname();
+export function FollowsList({ folded = false }: { folded?: boolean }) {
+  const router = useRouter();
   const follow = useFollow();
   const { ensureProxyStarted, getAvatarSrc } = useImageProxy();
+  const { refreshList, isRefreshing, progressCurrent, progressTotal } = useFollowRefresh();
   const playerOverlay = usePlayerOverlay();
+  const activeRoom = useActiveRoom();
+  const multiview = useMultiview();
+  const activeStreamerKey = activeRoom ? `${activeRoom.platform}:${activeRoom.roomId}` : null;
+  const [pickerAnchor, setPickerAnchor] = useState<SlotPickerAnchor | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const streamersListRef = useRef<HTMLDivElement | null>(null);
@@ -117,9 +46,6 @@ export function FollowsList() {
   const hoverY = useSpring(hoverYRaw, { stiffness: 520, damping: 44, mass: 0.7 });
   const hoverH = useSpring(hoverHRaw, { stiffness: 520, damping: 44, mass: 0.7 });
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [progressCurrent, setProgressCurrent] = useState(0);
-  const [progressTotal, setProgressTotal] = useState(0);
   const [showCheckIcon, setShowCheckIcon] = useState(false);
   const [isMac, setIsMac] = useState(false);
 
@@ -133,8 +59,33 @@ export function FollowsList() {
   const [folderNameModal, setFolderNameModal] = useState<{ open: boolean; mode: "create" | "rename"; folderId: string | null }>({ open: false, mode: "create", folderId: null });
   const [folderNameInput, setFolderNameInput] = useState("");
   const [folderMenu, setFolderMenu] = useState<{ open: boolean; x: number; y: number; folderId: string | null }>({ open: false, x: 0, y: 0, folderId: null });
+  const [streamerMenu, setStreamerMenu] = useState<{ open: boolean; x: number; y: number; streamerKey: string | null }>({ open: false, x: 0, y: 0, streamerKey: null });
   const [folderDeleteConfirm, setFolderDeleteConfirm] = useState<{ open: boolean; folderId: string | null }>({ open: false, folderId: null });
+  // 主列表项取关：两段式确认（第二次点击才生效，3 秒未确认自动复位）
+  const [confirmUnfollowKey, setConfirmUnfollowKey] = useState<string | null>(null);
+  const confirmUnfollowTimerRef = useRef<number | null>(null);
   const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+  const requestUnfollow = useCallback(
+    (itemKey: string, platform: FollowPlatform, id: string) => {
+      if (confirmUnfollowKey !== itemKey) {
+        setConfirmUnfollowKey(itemKey);
+        if (confirmUnfollowTimerRef.current != null) window.clearTimeout(confirmUnfollowTimerRef.current);
+        confirmUnfollowTimerRef.current = window.setTimeout(() => {
+          setConfirmUnfollowKey(null);
+          confirmUnfollowTimerRef.current = null;
+        }, 3000);
+        return;
+      }
+      if (confirmUnfollowTimerRef.current != null) {
+        window.clearTimeout(confirmUnfollowTimerRef.current);
+        confirmUnfollowTimerRef.current = null;
+      }
+      setConfirmUnfollowKey(null);
+      follow.unfollowStreamer(platform, id);
+    },
+    [confirmUnfollowKey, follow]
+  );
 
   const listItems: FollowListItem[] = follow.listOrder;
   const allStreamers = follow.followedStreamers;
@@ -169,38 +120,6 @@ export function FollowsList() {
       cancelled = true;
     };
   }, []);
-
-  // 仅在“本次启动首次进入软件”时：延迟 + idle 自动刷新一次；后续只能手动刷新
-  useEffect(() => {
-    if (!follow.hydrated) return;
-    if (allStreamers.length === 0) return;
-    // 等待关注数据就绪后再消耗一次性标记，避免 hydrated 先到导致错过自动刷新
-    if (!follow.consumeInitialAutoRefresh()) return;
-    const hasBiliOrHuya = allStreamers.some((s) => s.platform === "BILIBILI" || s.platform === "HUYA");
-
-    let cancelled = false;
-    const requestIdle = (cb: () => void, timeout = REFRESH_INITIAL_DELAY_MS) => {
-      const ric = (window as any).requestIdleCallback as ((fn: () => void, opts?: { timeout?: number }) => number) | undefined;
-      if (typeof ric === "function") {
-        const id = ric(() => cb(), { timeout });
-        return () => (window as any).cancelIdleCallback?.(id);
-      }
-      const t = window.setTimeout(cb, timeout);
-      return () => window.clearTimeout(t);
-    };
-
-    const cancelIdle = requestIdle(() => {
-      if (cancelled) return;
-      if (hasBiliOrHuya) void ensureProxyStarted();
-      void refreshList();
-    }, REFRESH_INITIAL_DELAY_MS);
-
-    return () => {
-      cancelled = true;
-      cancelIdle();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allStreamers.length, follow.hydrated]);
 
   const streamerByKey = useMemo(() => {
     const m = new Map<string, FollowedStreamer>();
@@ -237,64 +156,13 @@ export function FollowsList() {
     hoverOpacity.set(1);
   }, [hoverHRaw, hoverOpacity, hoverYRaw]);
 
-  const refreshList = useCallback(async () => {
-    if (isRefreshing) return;
-    const streamers = follow.followedStreamers;
-    const updatedByKey = new Map<string, FollowedStreamer>(streamers.map((s) => [`${s.platform}:${s.id}`, s]));
-    setIsRefreshing(true);
-    setShowCheckIcon(false);
-    setProgressTotal(streamers.length);
-    setProgressCurrent(0);
-
-    try {
-      const concurrency = FOLLOW_REFRESH_CONCURRENCY;
-      let idx = 0;
-      const workers = Array.from({ length: Math.min(concurrency, streamers.length) }, async () => {
-        while (idx < streamers.length) {
-          const current = streamers[idx];
-          idx += 1;
-          try {
-            const patch = await refreshOne(current);
-            follow.updateStreamer(current.platform, current.id, patch);
-            updatedByKey.set(`${current.platform}:${current.id}`, { ...current, ...patch });
-          } catch {
-            // 刷新失败时，至少不要继续显示“LIVE”（避免误判在线）
-            if (current.liveStatus === "LIVE") {
-              follow.updateStreamer(current.platform, current.id, { liveStatus: "UNKNOWN" });
-              updatedByKey.set(`${current.platform}:${current.id}`, { ...current, liveStatus: "UNKNOWN" });
-            }
-          } finally {
-            setProgressCurrent((v) => v + 1);
-          }
-        }
-      });
-      await Promise.all(workers);
-
-      // 对齐老项目：刷新完成后，把“直播中”的主播优先展示（保留同一状态桶内的原相对顺序）
-      const baseOrder = listItemsRef.current;
-      const folderItems = baseOrder.filter((x): x is Extract<FollowListItem, { type: "folder" }> => x.type === "folder");
-      const liveItems: Extract<FollowListItem, { type: "streamer" }>[] = [];
-      const restItems: Extract<FollowListItem, { type: "streamer" }>[] = [];
-      const seen = new Set<string>();
-
-      for (const item of baseOrder) {
-        if (item.type !== "streamer") continue;
-        const key = `${item.data.platform}:${item.data.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const latest = updatedByKey.get(key) ?? item.data;
-        const nextItem = { type: "streamer" as const, data: latest };
-        if (latest.liveStatus === "LIVE") liveItems.push(nextItem);
-        else restItems.push(nextItem);
-      }
-
-      follow.updateListOrder([...folderItems, ...liveItems, ...restItems]);
-    } finally {
-      setIsRefreshing(false);
-      setShowCheckIcon(true);
-      window.setTimeout(() => setShowCheckIcon(false), 1000);
-    }
-  }, [follow, isRefreshing]);
+  // 手动刷新：调度与拉取都在 FollowRefreshProvider，这里只负责按钮态（转圈 → 对勾）
+  const runManualRefresh = useCallback(async () => {
+    const ran = await refreshList({ suppressNotifications: true });
+    if (!ran) return;
+    setShowCheckIcon(true);
+    window.setTimeout(() => setShowCheckIcon(false), 1000);
+  }, [refreshList]);
 
   const openOverlay = useCallback(() => {
     const btnRect = expandBtnRef.current?.getBoundingClientRect();
@@ -314,6 +182,8 @@ export function FollowsList() {
   const closeOverlay = useCallback(() => {
     setOverlayOpen(false);
     setOverlayDeleteMode(false);
+    // Escape / 背板关面板时，同步清掉大面板卡片可能挂起的槽位选择器
+    setPickerAnchor(null);
   }, []);
 
   useEffect(() => {
@@ -482,11 +352,22 @@ export function FollowsList() {
   );
 
   const handleStreamerClick = useCallback(
-    (platform: FollowPlatform, id: string) => {
+    (platform: FollowPlatform, id: string, sourceEl?: HTMLElement | null) => {
       if (dragRef.current.isDragging || pendingDragRef.current.active || didDragRef.current) return;
+      if (multiview.isMultiview) {
+        const rect = sourceEl?.getBoundingClientRect();
+        if (!rect) return;
+        const s = allStreamers.find((x) => x.platform === platform && x.id === id);
+        setPickerAnchor({
+          rect: { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+          slot: { platform: platform.toLowerCase(), roomId: id },
+          streamer: s ? { nickname: s.nickname, avatarUrl: s.avatarUrl, platform: s.platform } : undefined
+        });
+        return;
+      }
       playerOverlay.openPlayer({ platform: platform.toLowerCase(), roomId: id });
     },
-    [playerOverlay]
+    [allStreamers, multiview.isMultiview, playerOverlay]
   );
 
   const overlayPlatforms = useMemo(() => {
@@ -651,17 +532,27 @@ export function FollowsList() {
   const renderStreamerRow = (
     s: FollowedStreamer,
     itemKey: string,
-    opts: { index: number; fromFolder?: boolean; sourceFolderId?: string | null; onEnter?: (el: HTMLElement) => void; onLeave?: () => void }
+    opts: { index: number; fromFolder?: boolean; sourceFolderId?: string | null; onEnter?: (el: HTMLElement) => void; onLeave?: () => void; isActive?: boolean }
   ) => {
     const liveDotClass = s.liveStatus === "LIVE" ? styles.liveDotLive : s.liveStatus === "UNKNOWN" ? styles.liveDotUnknown : styles.liveDotOffline;
     const dragKey = `${s.platform}:${s.id}`;
     const avatarSrc = getAvatarSrc(s.platform, s.avatarUrl);
     const dragEnabled = opts.fromFolder || opts.index >= 0;
     const inFolder = !!opts.fromFolder;
+    const isActive = !!opts.isActive;
+    const isLive = s.liveStatus === "LIVE";
+    const itemClass = `${styles.streamerItem}${inFolder ? ` ${styles.streamerItemInFolder}` : ""}${isActive ? ` ${styles.streamerItemActive}` : ""}`;
+    const avatarClass = `${styles.avatar}${isActive ? ` ${styles.avatarActive}` : ""}`;
+    const nameClass = `${styles.name}${isLive ? ` ${styles.nameLive}` : ""}`;
     return (
-      <div
+      <m.div
         key={itemKey}
         className={styles.listItemWrapper}
+        layout
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: "auto" }}
+        exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } }}
+        transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
         onMouseEnter={inFolder ? (e) => opts.onEnter?.(e.currentTarget) : (e) => onItemEnter(e.currentTarget)}
         onMouseLeave={inFolder ? () => opts.onLeave?.() : undefined}
         onMouseDown={
@@ -675,13 +566,19 @@ export function FollowsList() {
         }
       >
         <div
-          className={`${styles.streamerItem} ${inFolder ? styles.streamerItemInFolder : ""}`}
+          className={itemClass}
           role="button"
           tabIndex={0}
-          onClick={() => handleStreamerClick(s.platform, s.id)}
+          data-active={isActive ? "true" : undefined}
+          aria-current={isActive ? "true" : undefined}
+          onClick={(e) => handleStreamerClick(s.platform, s.id, e.currentTarget)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setStreamerMenu({ open: true, x: e.clientX, y: e.clientY, streamerKey: dragKey });
+          }}
         >
           <span className={styles.avatarWrap} aria-hidden="true">
-            <span className={styles.avatar}>
+            <span className={avatarClass}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarSrc ? (
                 <img className={styles.avatarImg} src={avatarSrc} alt={s.nickname} loading="lazy" decoding="async" draggable={false} />
@@ -692,15 +589,34 @@ export function FollowsList() {
             <span className={`${styles.liveDot} ${styles.liveDotOnAvatar} ${liveDotClass}`} aria-hidden="true" />
           </span>
           <div className={styles.meta}>
-            <div className={styles.name} title={s.nickname}>
+            <div className={nameClass} title={s.nickname}>
               {s.nickname}
             </div>
             <div className={styles.sub} title={s.roomTitle || ""}>
               {s.roomTitle || "暂无直播标题"}
             </div>
           </div>
+          {!dragUi.isDragging ? (
+            <button
+              type="button"
+              data-slot="button"
+              className={`${styles.itemRemoveBtn}${confirmUnfollowKey === itemKey ? ` ${styles.itemRemoveBtnConfirm}` : ""}`}
+              title={confirmUnfollowKey === itemKey ? "再次点击确认取消关注" : "取消关注"}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                requestUnfollow(itemKey, s.platform, s.id);
+              }}
+            >
+              {confirmUnfollowKey === itemKey ? (
+                <span className={styles.itemRemoveBtnLabel}>确认</span>
+              ) : (
+                <X size={12} strokeWidth={2.5} />
+              )}
+            </button>
+          ) : null}
         </div>
-      </div>
+      </m.div>
     );
   };
 
@@ -709,7 +625,7 @@ export function FollowsList() {
   }
 
   return (
-    <div className={styles.followList}>
+    <div className={styles.followList} data-collapsed={folded ? "true" : undefined}>
       <div className={styles.listHeader} ref={headerRef} data-tauri-drag-region>
         <div className={styles.headerLeft} data-tauri-drag-region>
           {!isMac ? (
@@ -728,7 +644,7 @@ export function FollowsList() {
               className={`${styles.actionBtn} ${styles.refreshBtn}`}
               data-tauri-drag-region="false"
               title="刷新列表"
-              onClick={() => void refreshList()}
+              onClick={() => void runManualRefresh()}
             >
               {showCheckIcon ? <Check size={18} /> : <RotateCw size={18} />}
             </button>
@@ -781,69 +697,78 @@ export function FollowsList() {
               暂无关注主播
             </div>
           ) : (
-            listItems.map((item, index) => {
-              if (item.type === "streamer") {
-                const key = `${item.data.platform}:${item.data.id}`;
-                const latest = streamerByKey.get(key) ?? item.data;
-                return renderStreamerRow(latest, key, { index });
-              }
+            <AnimatePresence initial={false}>
+              {listItems.map((item, index) => {
+                if (item.type === "streamer") {
+                  const key = `${item.data.platform}:${item.data.id}`;
+                  const latest = streamerByKey.get(key) ?? item.data;
+                  return renderStreamerRow(latest, key, { index, isActive: activeStreamerKey === key });
+                }
 
-              const folder = item.data;
-              const expanded = folder.expanded !== false;
-              const counts = folderCounts(folder.streamerIds);
-              return (
-                <div
-                  key={`folder_${folder.id}`}
-                  className={`${styles.listItemWrapper} ${styles.folderItem} ${expanded ? styles.folderItemExpanded : ""} ${
-                    dragUi.dragOverFolderId === folder.id ? styles.folderItemDragOver : ""
-                  }`}
-                  onMouseEnter={() => clearHoverHighlight()}
-                  data-folder-id={folder.id}
-                  onMouseDown={(e) => prepareDrag({ type: "folder", index }, e)}
-                >
+                const folder = item.data;
+                const expanded = folder.expanded !== false;
+                const counts = folderCounts(folder.streamerIds);
+                return (
                   <div
-                    className={styles.folderHeader}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      if (dragRef.current.isDragging || pendingDragRef.current.active || didDragRef.current) return;
-                      follow.toggleFolderExpanded(folder.id);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setFolderMenu({ open: true, x: e.clientX, y: e.clientY, folderId: folder.id });
-                    }}
+                    key={`folder_${folder.id}`}
+                    className={`${styles.folderItem} ${expanded ? styles.folderItemExpanded : ""} ${
+                      dragUi.dragOverFolderId === folder.id ? styles.folderItemDragOver : ""
+                    }`}
+                    onMouseEnter={() => clearHoverHighlight()}
+                    data-folder-id={folder.id}
+                    onMouseDown={(e) => prepareDrag({ type: "folder", index }, e)}
                   >
-                    <Folder size={16} className={`${styles.folderIcon} ${expanded ? styles.folderIconExpanded : ""}`} />
-                    <span className={styles.folderName} title={folder.name}>
-                      {folder.name}
-                    </span>
-                    <span className={styles.folderCount}>
-                      {counts.online}/{counts.total}
-                    </span>
-                    <m.span
-                      className={styles.expandIcon}
-                      animate={{ rotate: expanded ? 180 : 0 }}
-                      transition={{ duration: 0.2, ease: [0.25, 0.8, 0.4, 1] }}
-                      aria-hidden="true"
+                    <div
+                      className={styles.folderHeader}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (dragRef.current.isDragging || pendingDragRef.current.active || didDragRef.current) return;
+                        follow.toggleFolderExpanded(folder.id);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setFolderMenu({ open: true, x: e.clientX, y: e.clientY, folderId: folder.id });
+                      }}
                     >
-                      <ChevronDown size={12} />
-                    </m.span>
-                  </div>
+                      <Folder size={16} className={`${styles.folderIcon} ${expanded ? styles.folderIconExpanded : ""}`} />
+                      <span className={styles.folderName} title={folder.name}>
+                        {folder.name}
+                      </span>
+                      <span className={styles.folderCount}>
+                        {counts.online}/{counts.total}
+                      </span>
+                      <m.span
+                        className={styles.expandIcon}
+                        animate={{ rotate: expanded ? 180 : 0 }}
+                        transition={{ duration: 0.2, ease: [0.25, 0.8, 0.4, 1] }}
+                        aria-hidden="true"
+                      >
+                        <ChevronDown size={12} />
+                      </m.span>
+                    </div>
 
-                  <FolderChildren
-                    expanded={expanded}
-                    folderId={folder.id}
-                    streamerKeys={folder.streamerIds}
-                    normalizeKey={normalizeFollowKey}
-                    streamerByKey={streamerByKey}
-                    render={(s, itemKey, handlers) =>
-                      renderStreamerRow(s, itemKey, { index: -1, fromFolder: true, sourceFolderId: folder.id, onEnter: handlers.onEnter, onLeave: handlers.onLeave })
-                    }
-                  />
-                </div>
-              );
-            })
+                    <FolderChildren
+                      expanded={expanded}
+                      folderId={folder.id}
+                      streamerKeys={folder.streamerIds}
+                      normalizeKey={normalizeFollowKey}
+                      streamerByKey={streamerByKey}
+                      render={(s, itemKey, handlers) =>
+                        renderStreamerRow(s, itemKey, {
+                          index: -1,
+                          fromFolder: true,
+                          sourceFolderId: folder.id,
+                          onEnter: handlers.onEnter,
+                          onLeave: handlers.onLeave,
+                          isActive: activeStreamerKey === `${s.platform}:${s.id}`
+                        })
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </AnimatePresence>
           )}
         </div>
       </div>
@@ -907,7 +832,7 @@ export function FollowsList() {
                       type="button"
                       className={`${styles.overlayTextBtn} ${isRefreshing ? styles.overlayTextBtnRefreshing : ""}`}
                       disabled={isRefreshing}
-                      onClick={() => void refreshList()}
+                      onClick={() => void runManualRefresh()}
                     >
                       <span>刷新</span>
                       <span className={styles.overlaySpinner} aria-hidden="true" />
@@ -928,13 +853,22 @@ export function FollowsList() {
                         const liveDotClass = s.liveStatus === "LIVE" ? styles.liveDotLive : s.liveStatus === "UNKNOWN" ? styles.liveDotUnknown : styles.liveDotOffline;
                         const liveText = s.liveStatus === "LIVE" ? "直播中" : s.liveStatus === "OFFLINE" ? "离线" : "未知";
                         const roomTitle = s.roomTitle || "暂无直播标题";
+                        const isActive = activeStreamerKey === `${s.platform}:${s.id}`;
+                        const cardClass = `${styles.followOverlayCard}${overlayDeleteMode ? ` ${styles.followOverlayCardManage}` : ""}${isActive ? ` ${styles.followOverlayCardActive}` : ""}`;
                         return (
                           <div
                             key={`${s.platform}:${s.id}`}
-                            className={`${styles.followOverlayCard} ${overlayDeleteMode ? styles.followOverlayCardManage : ""}`}
+                            className={cardClass}
+                            data-active={isActive ? "true" : undefined}
+                            aria-current={isActive ? "true" : undefined}
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
+                            onClick={(e) => {
                               if (overlayDeleteMode) return;
+                              if (multiview.isMultiview) {
+                                // 多屏：与主列表一致弹槽位选择器替换指定窗口；面板保持开启，便于连续替换另一格
+                                handleStreamerClick(s.platform, s.id, e.currentTarget);
+                                return;
+                              }
                               playerOverlay.openPlayer({ platform: s.platform.toLowerCase(), roomId: s.id });
                               closeOverlay();
                             }}
@@ -1079,6 +1013,53 @@ export function FollowsList() {
         ) : null}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {streamerMenu.open ? (
+          <m.div
+            className={styles.menuBackdrop}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={() => setStreamerMenu((m) => ({ ...m, open: false }))}
+          >
+            <m.div
+              className={styles.contextMenu}
+              style={{ left: streamerMenu.x, top: streamerMenu.y }}
+              initial={{ opacity: 0, scale: 0.98, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 4 }}
+              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className={styles.menuItem}
+                onClick={() => {
+                  if (streamerMenu.streamerKey) {
+                    void invoke("open_stats_window_cmd", { streamer: streamerMenu.streamerKey }).catch(() => {});
+                  }
+                  setStreamerMenu((m) => ({ ...m, open: false }));
+                }}
+              >
+                查看观看统计
+              </button>
+              <button
+                type="button"
+                className={`${styles.menuItem} ${styles.menuDanger}`}
+                onClick={() => {
+                  const key = streamerMenu.streamerKey ?? "";
+                  const [platform, id] = key.split(":");
+                  if (platform && id) follow.unfollowStreamer(platform as FollowPlatform, id);
+                  setStreamerMenu((m) => ({ ...m, open: false }));
+                }}
+              >
+                取消关注
+              </button>
+            </m.div>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+
       {portalTarget
         ? createPortal(
             <AnimatePresence>
@@ -1129,6 +1110,16 @@ export function FollowsList() {
             portalTarget
           )
         : null}
+
+      {/* 多屏状态下点击关注项：弹出 macOS 风格的"槽位选择器" */}
+      <MultiviewSlotPicker
+        anchor={pickerAnchor}
+        onClose={() => setPickerAnchor(null)}
+        onPick={(index, slot) => {
+          multiview.assignSlot(index, slot);
+          multiview.setAudioSlot(index);
+        }}
+      />
     </div>
   );
 }

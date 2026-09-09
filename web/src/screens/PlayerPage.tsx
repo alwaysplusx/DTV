@@ -16,11 +16,14 @@ function toPlatformEnum(p: string): Platform {
 export function PlayerPage({
   platform,
   roomId,
-  onRequestCloseAction
+  onRequestCloseAction,
+  standalone
 }: {
   platform: string;
   roomId: string;
   onRequestCloseAction?: () => void;
+  /** 独立窗口模式：关闭按钮关窗、弹幕/代理按房间隔离，不干扰主窗口 */
+  standalone?: boolean;
 }) {
   const plat = useMemo(() => toPlatformEnum(platform), [platform]);
   if (!roomId) {
@@ -30,5 +33,5 @@ export function PlayerPage({
       </div>
     );
   }
-  return <MainPlayer platform={plat} roomId={roomId} onRequestCloseAction={onRequestCloseAction} />;
+  return <MainPlayer platform={plat} roomId={roomId} onRequestCloseAction={onRequestCloseAction} standalone={standalone} />;
 }

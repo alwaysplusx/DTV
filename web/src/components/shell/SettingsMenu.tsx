@@ -1,0 +1,390 @@
+"use client";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AnimatePresence, m } from "framer-motion";
+import { BarChart3, ExternalLink, MonitorSmartphone, RefreshCw, ScrollText, Settings, ThumbsUp, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+
+import styles from "./SettingsMenu.module.css";
+import { LanSyncModal } from "./LanSyncModal";
+import { openInDefaultBrowser } from "@/services/openExternal";
+import { logger } from "@/utils/logger";
+import {
+  FOLLOW_AUTOREFRESH_MAX_MS,
+  FOLLOW_AUTOREFRESH_MIN_MS,
+  getFollowAutoRefreshIntervalMs,
+  minutesToMs,
+  msToMinutes,
+  setFollowAutoRefreshIntervalMs
+} from "@/hooks/useFollowAutoRefreshInterval";
+
+type VersionInfo = {
+  version: string;
+  title?: string;
+  notes?: string[];
+  url?: string;
+  published_at?: string;
+};
+
+const GITHUB_RELEASES_URL = "https://github.com/chen-zeong/DTV/releases";
+
+export function SettingsMenu() {
+  const router = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [donateOpen, setDonateOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [lanSyncOpen, setLanSyncOpen] = useState(false);
+  const [autoRefreshMinutes, setAutoRefreshMinutes] = useState<number>(() => msToMinutes(getFollowAutoRefreshIntervalMs()));
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [hasUpdate, setHasUpdate] = useState(false);
+  const [localVersion, setLocalVersion] = useState<string>("");
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // 点外关闭二级菜单
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const root = rootRef.current;
+      if (root && !root.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      // 版本检查不是关键功能：失败不重试、不报错、不提示
+      try {
+        const res = await invoke<any>("check_version_cmd");
+        if (cancelled) return;
+        const local = typeof res?.local_version === "string" ? res.local_version : "";
+        setLocalVersion(local);
+        const remote = res?.remote;
+        if (remote && typeof remote.version === "string" && remote.version.trim()) {
+          const info: VersionInfo = {
+            version: remote.version,
+            title: typeof remote.title === "string" ? remote.title : undefined,
+            notes: Array.isArray(remote.notes) ? remote.notes.filter((x: any) => typeof x === "string") : undefined,
+            url: typeof remote.url === "string" ? remote.url : undefined,
+            published_at: typeof remote.published_at === "string" ? remote.published_at : undefined
+          };
+          setVersionInfo(info);
+        }
+        setHasUpdate(!!res?.has_update);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openMenuItem = useCallback((open: () => void) => {
+    setMenuOpen(false);
+    open();
+  }, []);
+
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const next = (e as CustomEvent<number>).detail;
+      const ms = typeof next === "number" ? next : getFollowAutoRefreshIntervalMs();
+      setAutoRefreshMinutes(msToMinutes(ms));
+    };
+    window.addEventListener("dtv_follow_autorefresh_interval_changed", onChange as EventListener);
+    return () => {
+      window.removeEventListener("dtv_follow_autorefresh_interval_changed", onChange as EventListener);
+    };
+  }, []);
+
+  const applyAutoRefreshMinutes = useCallback((minutes: number) => {
+    const clamped = Math.max(FOLLOW_AUTOREFRESH_MIN_MS / 60000, Math.min(FOLLOW_AUTOREFRESH_MAX_MS / 60000, minutes));
+    const ms = minutesToMs(clamped);
+    setAutoRefreshMinutes(clamped);
+    setFollowAutoRefreshIntervalMs(ms);
+  }, []);
+
+  const decAutoRefresh = useCallback(() => {
+    applyAutoRefreshMinutes(autoRefreshMinutes - 1);
+  }, [autoRefreshMinutes, applyAutoRefreshMinutes]);
+
+  const incAutoRefresh = useCallback(() => {
+    applyAutoRefreshMinutes(autoRefreshMinutes + 1);
+  }, [autoRefreshMinutes, applyAutoRefreshMinutes]);
+
+  const onAutoRefreshInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (raw === "") {
+      setAutoRefreshMinutes(0);
+      return;
+    }
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return;
+    applyAutoRefreshMinutes(v);
+  }, [applyAutoRefreshMinutes]);
+
+  const onAutoRefreshInputBlur = useCallback(() => {
+    if (autoRefreshMinutes < 0) applyAutoRefreshMinutes(0);
+  }, [autoRefreshMinutes, applyAutoRefreshMinutes]);
+
+  return (
+    <div ref={rootRef} className={styles.settingsRoot}>
+      <button
+        type="button"
+        className={styles.settingsBtn}
+        onClick={() => setMenuOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        aria-label="设置"
+        title="设置"
+      >
+        <Settings size={18} />
+        {hasUpdate ? <span className={styles.badgeDot} aria-hidden="true" /> : null}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {menuOpen ? (
+          <m.div
+            className={styles.menu}
+            role="menu"
+            aria-label="设置菜单"
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 520, damping: 40, mass: 0.7 }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() => openMenuItem(() => setUpdateOpen(true))}
+            >
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>版本信息</span>
+                <span className={styles.menuItemValue}>
+                  v{localVersion || "?"}
+                  {hasUpdate ? <span className={styles.badgeNew}>NEW</span> : null}
+                </span>
+              </span>
+            </button>
+
+            <div className={`${styles.menuItem} ${styles.menuItemStatic}`} role="menuitem">
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>
+                  <RefreshCw size={15} />
+                  自动刷新
+                </span>
+                <span className={styles.menuItemValue}>
+                  <span className={styles.stepper}>
+                    <button
+                      type="button"
+                      className={styles.stepperBtn}
+                      aria-label="减少间隔"
+                      onClick={decAutoRefresh}
+                      disabled={autoRefreshMinutes <= 0}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      className={styles.stepperInput}
+                      min={0}
+                      max={60}
+                      value={autoRefreshMinutes}
+                      onChange={onAutoRefreshInputChange}
+                      onBlur={onAutoRefreshInputBlur}
+                      aria-label="自动刷新间隔（分钟，0 表示关闭）"
+                    />
+                    <button
+                      type="button"
+                      className={styles.stepperBtn}
+                      aria-label="增加间隔"
+                      onClick={incAutoRefresh}
+                      disabled={autoRefreshMinutes >= 60}
+                    >
+                      +
+                    </button>
+                  </span>
+                </span>
+              </span>
+            </div>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() => openMenuItem(() => setLanSyncOpen(true))}
+            >
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>
+                  <MonitorSmartphone size={15} />
+                  数据同步
+                </span>
+                <span className={styles.menuItemValue} />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() => {
+                setMenuOpen(false);
+                void invoke("open_stats_window_cmd", {}).catch(() => {});
+              }}
+            >
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>
+                  <BarChart3 size={15} />
+                  观看统计
+                </span>
+                <span className={styles.menuItemValue} />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() =>
+                openMenuItem(() => {
+                  invoke("open_log_window_cmd").catch((e: any) => {
+                    logger.error("打开运行日志窗口失败", e);
+                  });
+                })
+              }
+            >
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>
+                  <ScrollText size={15} />
+                  运行日志
+                </span>
+                <span className={styles.menuItemValue} />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() => openMenuItem(() => setDonateOpen(true))}
+            >
+              <span className={styles.menuItemMain}>
+                <span className={styles.menuItemLabel}>
+                  <ThumbsUp size={15} />
+                  打赏支持
+                </span>
+                <span className={styles.menuItemValue} />
+              </span>
+            </button>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {donateOpen ? (
+          <m.div
+            className={styles.overlayBackdrop}
+            // eslint-disable-next-line react/no-unknown-property
+            data-tauri-drag-region="false"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={() => setDonateOpen(false)}
+          >
+            <m.div
+              className={styles.overlayCard}
+              initial={{ opacity: 0, y: 10, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.99 }}
+              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className={styles.overlayHeader}>
+                <div className={styles.overlayTitle}>打赏支持</div>
+                <button type="button" className={styles.overlayClose} onClick={() => setDonateOpen(false)} aria-label="关闭">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className={styles.overlayBody}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className={styles.qrImage} src="/wechat.jpg" alt="微信赞赏码" />
+              </div>
+            </m.div>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {updateOpen ? (
+          <m.div
+            className={styles.overlayBackdrop}
+            // eslint-disable-next-line react/no-unknown-property
+            data-tauri-drag-region="false"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={() => setUpdateOpen(false)}
+          >
+            <m.div
+              className={styles.overlayCard}
+              initial={{ opacity: 0, y: 10, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.99 }}
+              transition={{ type: "spring", stiffness: 520, damping: 44, mass: 0.7 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className={styles.overlayHeader}>
+                <div className={styles.overlayTitle}>
+                  {hasUpdate && versionInfo ? versionInfo.title || `发现新版本 v${versionInfo.version}` : "版本信息"}
+                </div>
+                <button type="button" className={styles.overlayClose} onClick={() => setUpdateOpen(false)} aria-label="关闭">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className={styles.overlayBody}>
+                <div className={styles.updateMeta}>
+                  <span>当前版本：v{localVersion || "?"}</span>
+                  {hasUpdate && versionInfo ? <span>最新版本：v{versionInfo.version}</span> : <span>已是最新</span>}
+                  {hasUpdate && versionInfo?.published_at ? <span>发布日期：{versionInfo.published_at}</span> : null}
+                </div>
+                {hasUpdate && versionInfo?.notes?.length ? (
+                  <ul className={styles.updateNotes}>
+                    {versionInfo.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <div className={styles.updateActions}>
+                  <button
+                    type="button"
+                    className={styles.primaryBtn}
+                    onClick={() => void openInDefaultBrowser((versionInfo?.url || GITHUB_RELEASES_URL) as string)}
+                  >
+                    <ExternalLink size={16} />
+                    {hasUpdate ? "打开下载页" : "打开 GitHub"}
+                  </button>
+                </div>
+              </div>
+            </m.div>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+
+      <LanSyncModal open={lanSyncOpen} onClose={() => setLanSyncOpen(false)} appVersion={localVersion} />
+    </div>
+  );
+}

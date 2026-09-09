@@ -4,6 +4,17 @@
   overflow: hidden;
 }
 
+/* 侧栏开合时内容区让位动效：由 JS 在首帧后挂载，避免启动回读“已折叠”的那一跳被动画化 */
+.appShellAnim {
+  transition: padding-left var(--sidebar-anim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appShellAnim {
+    transition: none;
+  }
+}
+
 .appMain {
   flex: 1;
   display: flex;

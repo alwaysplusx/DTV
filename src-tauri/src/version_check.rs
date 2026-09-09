@@ -64,4 +64,3 @@ pub async fn check_version_cmd(
         has_update,
     })
 }
-

@@ -1,7 +1,7 @@
 import DanmuJs from 'danmu.js';
 import type Player from 'xgplayer';
 
-import { sanitizeDanmuArea, sanitizeDanmuOpacity } from './constants';
+import { DANMU_AREA_TOP_MARGIN, sanitizeDanmuArea, sanitizeDanmuOpacity } from './constants';
 import type { DanmuOverlayInstance } from './types';
 import type { DanmuUserSettings } from './constants';
 
@@ -23,7 +23,7 @@ const computeMaxBullets = (host: HTMLElement, settings: DanmuUserSettings) => {
   const area = sanitizeDanmuArea(settings.area);
   const fontSizePx = parseFontSizePx(settings.fontSize);
   const channelSize = computeChannelSize(fontSizePx);
-  const visibleHeight = Math.max(1, Math.floor(height * area));
+  const visibleHeight = Math.max(1, Math.floor(height * Math.max(0, area - DANMU_AREA_TOP_MARGIN)));
   const approxLines = Math.max(1, Math.floor(visibleHeight / channelSize));
   return approxLines * 4;
 };
@@ -34,7 +34,7 @@ const computeAreaLines = (host: HTMLElement, settings: DanmuUserSettings) => {
   const area = sanitizeDanmuArea(settings.area);
   const fontSizePx = parseFontSizePx(settings.fontSize);
   const channelSize = computeChannelSize(fontSizePx);
-  const visibleHeight = Math.max(1, Math.floor(height * area));
+  const visibleHeight = Math.max(1, Math.floor(height * Math.max(0, area - DANMU_AREA_TOP_MARGIN)));
   const approxLines = Math.max(1, Math.floor(visibleHeight / channelSize));
   return clamp(approxLines, 1, 60);
 };
@@ -83,7 +83,7 @@ export const applyDanmuOverlayPreferences = (
   }
   try {
     const areaValue = sanitizeDanmuArea(danmuSettings.area);
-    overlay.setArea?.({ start: 0, end: areaValue });
+    overlay.setArea?.({ end: areaValue });
   } catch (error) {
     console.warn('[Player] Failed to apply danmu area:', error);
   }
@@ -171,9 +171,10 @@ export const createDanmuOverlay = (
       containerStyle: { zIndex: 7 },
       player: media,
       comments: [],
-      area: { start: 0, end: initialAreaEnd, lines: computeAreaLines(overlayHost, currentSettings) },
+      area: { start: DANMU_AREA_TOP_MARGIN, end: initialAreaEnd, lines: computeAreaLines(overlayHost, currentSettings) },
       channelSize: initialChannelSize,
       mouseControl: false,
+      mouseEnterControl: true,
       mouseControlPause: false,
       // Increase horizontal gap slightly to reduce bursts; keeps no-overlap stable under load.
       bOffset: 800,
@@ -192,6 +193,122 @@ export const createDanmuOverlay = (
         console.warn('[Player] Failed to start danmu.js:', error);
       }
     };
+
+    // —— 悬停弹幕显示发送者 ——
+    // host 自身保持 pointer-events:none（不挡播放器交互），仅子弹元素在开启弹幕时放开命中，
+    // danmu.js 的 mouseover 挂在 host 上、由子弹事件冒泡触发 bullet_hover。
+    // 悬停的那一条 freezeComment 冻结（其余照常滚动），离开/隐藏时 restartComment 恢复。
+    const tooltip = document.createElement('div');
+    tooltip.className = 'danmu-sender-tooltip';
+    let hoveredBullet: any = null;
+    let followRafId = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    const syncHostHoverability = () => {
+      overlayHost.classList.toggle('danmu-hoverable', currentEnabled && currentOpacity > 0);
+    };
+
+    const stopFollowTooltip = () => {
+      if (followRafId) {
+        cancelAnimationFrame(followRafId);
+        followRafId = 0;
+      }
+      if (hoveredBullet) {
+        try {
+          danmu.restartComment?.(hoveredBullet.id);
+        } catch {
+          // ignore
+        }
+      }
+      hoveredBullet = null;
+      tooltip.style.display = 'none';
+    };
+
+    const followTooltip = () => {
+      followRafId = 0;
+      const el = hoveredBullet?.el as HTMLElement | undefined;
+      if (!el || !el.isConnected) {
+        stopFollowTooltip();
+        return;
+      }
+      const bulletRect = el.getBoundingClientRect();
+      if (
+        pointerX < bulletRect.left ||
+        pointerX > bulletRect.right ||
+        pointerY < bulletRect.top ||
+        pointerY > bulletRect.bottom
+      ) {
+        stopFollowTooltip();
+        return;
+      }
+      const hostRect = overlayHost.getBoundingClientRect();
+      if (!tooltip.isConnected) {
+        overlayHost.parentElement?.appendChild(tooltip);
+      }
+      tooltip.style.display = 'block';
+      let left = bulletRect.left - hostRect.left;
+      let top = bulletRect.top - hostRect.top - tooltip.offsetHeight - 6;
+      if (top < 2) {
+        top = bulletRect.bottom - hostRect.top + 6;
+      }
+      left = clamp(left, 2, Math.max(2, hostRect.width - tooltip.offsetWidth - 2));
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+      followRafId = requestAnimationFrame(followTooltip);
+    };
+
+    const handlePointerMove = (event: Event) => {
+      const e = event as PointerEvent;
+      pointerX = e.clientX;
+      pointerY = e.clientY;
+    };
+    const handlePointerOut = (event: Event) => {
+      const el = hoveredBullet?.el as HTMLElement | undefined;
+      const target = event.target as Node | null;
+      if (!el || !target) return;
+      if (target !== el && !el.contains(target)) return;
+      const related = (event as PointerEvent).relatedTarget as Node | null;
+      if (related && el.contains(related)) return;
+      stopFollowTooltip();
+    };
+
+    overlayHost.addEventListener('pointermove', handlePointerMove);
+    overlayHost.addEventListener('pointerout', handlePointerOut);
+
+    danmu.on?.('bullet_hover', ({ bullet, event }: any) => {
+      if (!currentEnabled || currentOpacity <= 0) return;
+      const sender = bullet?.options?.sender;
+      if (typeof sender !== 'string' || !sender || !bullet?.el) return;
+      if (hoveredBullet && hoveredBullet !== bullet) {
+        try {
+          danmu.restartComment?.(hoveredBullet.id);
+        } catch {
+          // ignore
+        }
+      }
+      try {
+        danmu.freezeComment?.(bullet.id);
+      } catch {
+        // ignore
+      }
+      const mouseEvent = event as PointerEvent | undefined;
+      pointerX = mouseEvent?.clientX ?? 0;
+      pointerY = mouseEvent?.clientY ?? 0;
+      hoveredBullet = bullet;
+      tooltip.textContent = sender;
+      if (!followRafId) {
+        followRafId = requestAnimationFrame(followTooltip);
+      }
+    });
+
+    danmu.on?.('bullet_remove', ({ bullet }: any) => {
+      if (hoveredBullet && bullet === hoveredBullet) {
+        stopFollowTooltip();
+      }
+    });
+
+    syncHostHoverability();
 
     const overlay: DanmuOverlayInstance = {
       sendComment: (comment) => {
@@ -224,7 +341,7 @@ export const createDanmuOverlay = (
             ...(comment.style ?? {}),
           };
 
-          danmu.sendComment({ id, txt: comment.txt, duration, mode, style: mergedStyle } as any);
+          danmu.sendComment({ id, txt: comment.txt, duration, mode, sender: comment.sender, style: mergedStyle } as any);
         } catch (error) {
           console.warn('[Player] Failed emitting danmu.js comment:', error);
         }
@@ -246,10 +363,13 @@ export const createDanmuOverlay = (
         } catch {
           // ignore DOM clearing
         }
+        stopFollowTooltip();
+        tooltip.remove();
       },
       play: () => {
         currentEnabled = true;
         currentOpacity = sanitizeDanmuOpacity(currentSettings.opacity);
+        syncHostHoverability();
         ensureStarted();
         try {
           danmu.play();
@@ -258,11 +378,14 @@ export const createDanmuOverlay = (
       pause: () => {
         currentEnabled = false;
         currentOpacity = 0;
+        stopFollowTooltip();
+        syncHostHoverability();
         try {
           danmu.pause();
         } catch {}
       },
       stop: () => {
+        stopFollowTooltip();
         try {
           danmu.stop();
         } catch {}
@@ -285,6 +408,10 @@ export const createDanmuOverlay = (
       setOpacity: (opacity: number) => {
         const next = Math.max(0, Math.min(1, opacity));
         currentOpacity = currentEnabled ? next : 0;
+        if (currentOpacity <= 0) {
+          stopFollowTooltip();
+        }
+        syncHostHoverability();
         overlayHost.style.setProperty('--danmu-opacity', String(currentOpacity));
         try {
           danmu.setOpacity?.(currentOpacity);
@@ -302,7 +429,7 @@ export const createDanmuOverlay = (
           // ignore
         }
         try {
-          danmu.setArea?.({ start: 0, end: sanitizeDanmuArea(currentSettings.area), lines: computeAreaLines(overlayHost, currentSettings) });
+          danmu.setArea?.({ start: DANMU_AREA_TOP_MARGIN, end: sanitizeDanmuArea(currentSettings.area), lines: computeAreaLines(overlayHost, currentSettings) });
         } catch {
           // ignore
         }
@@ -322,7 +449,7 @@ export const createDanmuOverlay = (
         const end = sanitizeDanmuArea(area?.end ?? currentSettings.area);
         currentSettings = { ...currentSettings, area: end };
         try {
-          danmu.setArea?.({ start: 0, end, lines: area?.lines ?? computeAreaLines(overlayHost, currentSettings) });
+          danmu.setArea?.({ start: DANMU_AREA_TOP_MARGIN, end, lines: area?.lines ?? computeAreaLines(overlayHost, currentSettings) });
         } catch {
           // ignore
         }

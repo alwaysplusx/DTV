@@ -4,8 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type SearchPlatform = "douyu" | "huya" | "bilibili";
 
+/** 搜索结果平台：斗鱼/虎牙/B站 支持关键词搜索；抖音仅按直播号解析 */
+export type SearchAnchorPlatform = SearchPlatform | "douyin";
+
 export type SearchAnchorResult = {
-  platform: SearchPlatform;
+  platform: SearchAnchorPlatform;
   roomId: string;
   userName: string;
   roomTitle: string;
@@ -109,4 +112,72 @@ export async function searchAnchors(platform: SearchPlatform, keyword: string): 
 
   const raw = await invoke<string>("search_anchor", { keyword: trimmed });
   return parseDouyuSearch(raw ?? "");
+}
+
+/** 抖音无关键词搜索，仅支持按直播号/web_id 解析单个直播间 */
+export async function searchDouyinRoom(keyword: string): Promise<SearchAnchorResult[]> {
+  const trimmed = (keyword || "").trim();
+  if (!trimmed) return [];
+  // 抖音号通常是纯数字或带字母的 web_id
+  const data = await invoke<{
+    title?: string | null;
+    anchor_name?: string | null;
+    avatar?: string | null;
+    status?: number | null;
+    error_message?: string | null;
+    web_rid?: string | null;
+  }>("fetch_douyin_streamer_info", {
+    payload: { args: { room_id_str: trimmed } }
+  });
+  if (!data || data.error_message || !data.anchor_name) {
+    throw new Error("未找到该抖音号，请确认直播号是否正确");
+  }
+  return [
+    {
+      platform: "douyin",
+      roomId: data.web_rid || trimmed,
+      userName: data.anchor_name,
+      roomTitle: data.title || "暂无标题",
+      avatar: data.avatar || "",
+      liveStatus: data.status === 2
+    }
+  ];
+}
+
+/** 平台筛选：单个平台，或 "all"（斗鱼/虎牙/B站 并行） */
+export type SearchFilter = SearchPlatform | "all" | "douyin";
+
+export const SEARCH_PLATFORM_LABELS: Array<{ id: SearchFilter; label: string }> = [
+  { id: "all", label: "全部" },
+  { id: "douyu", label: "斗鱼" },
+  { id: "huya", label: "虎牙" },
+  { id: "bilibili", label: "B站" },
+  { id: "douyin", label: "抖音" }
+];
+
+/**
+ * 按筛选搜索：选单平台只搜该平台；选「全部」则斗鱼/虎牙/B站 并行搜索并去重。
+ * 抖音无关键词搜索，仅支持按直播号/web_id 精确解析单个直播间，不参与「全部」并行。
+ * 并行模式下单个平台失败不阻塞其它平台（错误静默），单平台模式原样向上抛错。
+ */
+export async function searchFiltered(keyword: string, filter: SearchFilter): Promise<SearchAnchorResult[]> {
+  const trimmed = (keyword || "").trim();
+  if (!trimmed) return [];
+  if (filter === "all") {
+    const platforms: SearchPlatform[] = ["douyu", "huya", "bilibili"];
+    const settled = await Promise.allSettled(platforms.map((p) => searchAnchors(p, trimmed)));
+    const merged: SearchAnchorResult[] = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") merged.push(...(s.value ?? []));
+    }
+    const seen = new Set<string>();
+    return merged.filter((r) => {
+      const k = `${r.platform}:${r.roomId}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+  if (filter === "douyin") return searchDouyinRoom(trimmed);
+  return searchAnchors(filter, trimmed);
 }

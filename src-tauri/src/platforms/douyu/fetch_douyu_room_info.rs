@@ -17,6 +17,8 @@ pub struct DouyuFollowInfo {
     avatar_url: Option<String>,
     video_loop: Option<i64>,
     show_status: Option<i64>,
+    cover_url: Option<String>,
+    viewer_count_str: Option<String>,
 }
 
 #[tauri::command]
@@ -112,6 +114,26 @@ pub async fn fetch_douyu_room_info(
     // If API provides its own room_id, prefer that. Otherwise, use the input room_id.
     let final_room_id = get_str(room_data, "room_id").unwrap_or_else(|| room_id.clone());
 
+    // betard 的 room_src 是相对片段（asrpic/.../dy4），可加载的绝对地址在同级 room_pic / coverSrc
+    let cover_url = get_str(room_data, "room_pic")
+        .or_else(|| get_str(room_data, "coverSrc"))
+        .or_else(|| get_str(room_data, "room_src").filter(|u| u.starts_with("http")));
+
+    // betard 的人气键随版本漂移：online 优先，hn 兜底（数字或数字串皆可）
+    let online = get_i64(room_data, "online")
+        .or_else(|| get_i64(room_data, "hn"))
+        .or_else(|| get_str(room_data, "hn").and_then(|s| s.trim().parse::<i64>().ok()))
+        .unwrap_or(0);
+    let viewer_count_str = if online > 0 {
+        Some(if online >= 10_000 {
+            format!("{:.1}万", (online as f64) / 10_000.0)
+        } else {
+            online.to_string()
+        })
+    } else {
+        None
+    };
+
     let info = DouyuFollowInfo {
         room_id: final_room_id,
         room_name: get_str(room_data, "room_name"),
@@ -119,6 +141,8 @@ pub async fn fetch_douyu_room_info(
         avatar_url: avatar_final_url,
         video_loop: get_i64(room_data, "videoLoop"),
         show_status: get_i64(room_data, "show_status"),
+        cover_url,
+        viewer_count_str,
     };
 
     Ok(info)

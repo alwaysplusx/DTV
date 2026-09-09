@@ -140,16 +140,17 @@ impl HttpClient {
     }
 
     async fn send_request(&self, request_builder: RequestBuilder) -> Result<Response, String> {
-        self.send_request_raw(request_builder)
-            .await
-            .map_err(|e| {
-                let msg = Self::format_reqwest_error(&e);
-                println!("[HTTP_CLIENT ERROR] HTTP request failed: {}", msg);
-                format!("HTTP request execution failed: {}", msg)
-            })
+        self.send_request_raw(request_builder).await.map_err(|e| {
+            let msg = Self::format_reqwest_error(&e);
+            log::info!("[HTTP_CLIENT ERROR] HTTP request failed: {}", msg);
+            format!("HTTP request execution failed: {}", msg)
+        })
     }
 
-    async fn send_request_raw(&self, request_builder: RequestBuilder) -> Result<Response, reqwest::Error> {
+    async fn send_request_raw(
+        &self,
+        request_builder: RequestBuilder,
+    ) -> Result<Response, reqwest::Error> {
         request_builder.headers(self.headers.clone()).send().await
     }
 

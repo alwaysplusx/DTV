@@ -10,17 +10,6 @@ pub struct ImportedJsonFile {
     pub content: String,
 }
 
-fn is_lan_sync_json_candidate(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    let lower = name.to_ascii_lowercase();
-    if !lower.ends_with(".json") {
-        return false;
-    }
-    lower.starts_with("dtv-sync")
-}
-
 fn sanitize_file_name(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -91,7 +80,9 @@ pub fn export_lan_sync_json_to_desktop(
 }
 
 #[tauri::command]
-pub fn pick_lan_sync_json_import(app: tauri::AppHandle) -> Result<Option<ImportedJsonFile>, String> {
+pub fn pick_lan_sync_json_import(
+    app: tauri::AppHandle,
+) -> Result<Option<ImportedJsonFile>, String> {
     let desktop = app.path().desktop_dir().ok();
     let mut dialog = rfd::FileDialog::new().add_filter("DTV Sync", &["json"]);
     if let Some(dir) = desktop {
@@ -102,47 +93,8 @@ pub fn pick_lan_sync_json_import(app: tauri::AppHandle) -> Result<Option<Importe
         return Ok(None);
     };
 
-    let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read json file: {e}"))?;
-    Ok(Some(ImportedJsonFile {
-        path: path.to_string_lossy().into_owned(),
-        content,
-    }))
-}
-
-#[tauri::command]
-pub fn import_latest_lan_sync_json_from_desktop(app: tauri::AppHandle) -> Result<Option<ImportedJsonFile>, String> {
-    let desktop = app
-        .path()
-        .desktop_dir()
-        .map_err(|e| format!("Failed to resolve desktop dir: {e}"))?;
-
-    let mut best: Option<(PathBuf, std::time::SystemTime)> = None;
-
-    let entries = fs::read_dir(&desktop).map_err(|e| format!("Failed to read desktop dir: {e}"))?;
-    for entry in entries {
-        let entry = match entry {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if !path.is_file() || !is_lan_sync_json_candidate(&path) {
-            continue;
-        }
-        let modified = match fs::metadata(&path).and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        match &best {
-            None => best = Some((path, modified)),
-            Some((_, best_time)) if modified > *best_time => best = Some((path, modified)),
-            _ => {}
-        }
-    }
-
-    let Some((path, _)) = best else {
-        return Ok(None);
-    };
-    let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read json file: {e}"))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read json file: {e}"))?;
     Ok(Some(ImportedJsonFile {
         path: path.to_string_lossy().into_owned(),
         content,

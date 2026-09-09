@@ -89,6 +89,32 @@ export function PlayerOverlayProvider({ children }: { children: React.ReactNode 
     setState((s) => ({ ...s, isOpen: false }));
   }, []);
 
+  // 独立统计窗口转发来的打开请求（Rust open_player_in_main_cmd 前置主窗口后广播）
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen<{ platform: string; roomId: string }>("dtv_open_player_request", (e) => {
+          const { platform, roomId } = e.payload ?? {};
+          if (!platform || !roomId) return;
+          openPlayer({ platform: platform.toLowerCase(), roomId });
+        });
+      } catch {
+        // 非 Tauri 环境：忽略
+      }
+      if (cancelled) {
+        unlisten?.();
+        unlisten = undefined;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [openPlayer]);
+
   const value = useMemo<PlayerOverlayContextValue>(
     () => ({
       isOpen: state.isOpen,

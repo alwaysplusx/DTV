@@ -54,12 +54,15 @@ pub async fn get_douyin_live_stream_url_with_quality(
             available_streams: None,
             normalized_room_id: None,
             web_rid: None,
+            cover_url: None,
+            viewer_count_str: None,
         });
     }
 
-    println!(
+    log::info!(
         "[Douyin Stream Detail] Fetching stream for '{}' with requested quality '{}'",
-        requested_id, quality
+        requested_id,
+        quality
     );
 
     let http_client = HttpClient::new_direct_connection()
@@ -70,7 +73,7 @@ pub async fn get_douyin_live_stream_url_with_quality(
     let origin_from_html = fetch_origin_flv_from_live_page(&http_client, &normalized_id)
         .await
         .unwrap_or_else(|err| {
-            println!(
+            log::info!(
                 "[Douyin Stream Detail] Failed to fetch live page for origin stream: {}",
                 err
             );
@@ -99,9 +102,10 @@ pub async fn get_douyin_live_stream_url_with_quality(
     let available_streams = collect_available_streams(&room);
 
     if status != 2 {
-        println!(
+        log::info!(
             "[Douyin Stream Detail] Room '{}' is not live (status={}). Returning metadata only.",
-            web_rid, status
+            web_rid,
+            status
         );
         return Ok(CommonLiveStreamInfo {
             title,
@@ -114,6 +118,8 @@ pub async fn get_douyin_live_stream_url_with_quality(
             available_streams: available_streams.clone(),
             normalized_room_id: Some(room_id_str),
             web_rid: Some(web_rid),
+            cover_url: extract_cover_url(&room),
+            viewer_count_str: extract_user_count_str(&room),
         });
     }
 
@@ -125,9 +131,10 @@ pub async fn get_douyin_live_stream_url_with_quality(
             "[Douyin Stream Detail] No FLV streams available in stream_url.flv_pull_url".to_string()
         })?;
     let (selected_key, real_url) = selected;
-    println!(
+    log::info!(
         "[Douyin Stream Detail] Selected FLV stream key='{}' url='{}'",
-        selected_key, real_url
+        selected_key,
+        real_url
     );
 
     let sanitized_url = enforce_https(&real_url);
@@ -143,6 +150,8 @@ pub async fn get_douyin_live_stream_url_with_quality(
         available_streams,
         normalized_room_id: Some(room_id_str),
         web_rid: Some(web_rid),
+        cover_url: extract_cover_url(&room),
+        viewer_count_str: extract_user_count_str(&room),
     })
 }
 
@@ -218,6 +227,27 @@ pub(crate) fn extract_avatar(room: &Value) -> Option<String> {
         })
 }
 
+pub(crate) fn extract_cover_url(room: &Value) -> Option<String> {
+    room.get("cover")
+        .and_then(|c| c.get("url_list"))
+        .and_then(|list| list.get(0))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+pub(crate) fn extract_user_count_str(room: &Value) -> Option<String> {
+    room.get("stats")
+        .and_then(|s| s.get("user_count_str"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            room.get("stats")
+                .and_then(|s| s.get("total_user_str"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+}
+
 pub(crate) fn collect_available_streams(room: &Value) -> Option<Vec<StreamVariant>> {
     let flv_map = room
         .get("stream_url")
@@ -262,8 +292,7 @@ fn pick_douyin_flv_by_quality(
         .and_then(|v| v.get("flv_pull_url"))
         .and_then(|v| v.as_object())?;
 
-    let origin_url = origin_override
-        .or_else(|| flv_map.get("ORIGIN").and_then(|v| v.as_str()));
+    let origin_url = origin_override.or_else(|| flv_map.get("ORIGIN").and_then(|v| v.as_str()));
     let full_hd1 = flv_map.get("FULL_HD1").and_then(|v| v.as_str());
     let hd1 = flv_map.get("HD1").and_then(|v| v.as_str());
     let sd_fallback = flv_map
@@ -275,9 +304,7 @@ fn pick_douyin_flv_by_quality(
         QUALITY_OD => origin_url
             .map(|u| ("ORIGIN".to_string(), u.to_string()))
             .or_else(|| full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))),
-        QUALITY_UHD => {
-            full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string()))
-        }
+        QUALITY_UHD => full_hd1.map(|u| ("FULL_HD1".to_string(), u.to_string())),
         QUALITY_BD => hd1
             .map(|u| ("HD1".to_string(), u.to_string()))
             .or_else(|| sd_fallback.map(|u| ("SD1".to_string(), u.to_string()))),
@@ -299,9 +326,9 @@ fn insert_origin_flv(room: &mut Value, origin_url: &str) {
         _ => {
             let mut new_map = serde_json::Map::new();
             new_map.insert("ORIGIN".to_string(), Value::String(origin_url.to_string()));
-            stream_url.as_object_mut().map(|obj| {
-                obj.insert("flv_pull_url".to_string(), Value::Object(new_map))
-            });
+            stream_url
+                .as_object_mut()
+                .map(|obj| obj.insert("flv_pull_url".to_string(), Value::Object(new_map)));
         }
     }
 }

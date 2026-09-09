@@ -102,8 +102,8 @@ pub async fn fetch_douyin_partition_rooms(
 
     // 抖音接口在国内可以直接访问，使用直连方式，避免代理问题
     // 使用 new_direct_connection() 绕过系统代理设置
-    let local_client =
-        HttpClient::new_direct_connection().map_err(|e| format!("Failed to create HttpClient: {}", e))?;
+    let local_client = HttpClient::new_direct_connection()
+        .map_err(|e| format!("Failed to create HttpClient: {}", e))?;
 
     // 使用更新的 Cookie（从浏览器获取的最新值）
     // 注意：这些 Cookie 可能会过期，需要定期从浏览器更新
@@ -118,10 +118,7 @@ pub async fn fetch_douyin_partition_rooms(
         HeaderValue::from_str(&cookie_string)
             .map_err(|e| format!("Failed to create cookie header value: {}", e))?,
     );
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static(DEFAULT_USER_AGENT),
-    );
+    headers.insert(USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
 
     let params: Vec<(String, String)> = vec![
         ("aid".to_string(), "6383".to_string()),

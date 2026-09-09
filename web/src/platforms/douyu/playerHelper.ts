@@ -1,12 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
 
-let douyuProxyActive = false;
+export type DouyuStreamConfig = {
+  streamUrl: string;
+  streamType: string | undefined;
+  proxySession: string | null;
+};
 
+/**
+ * 拉斗鱼直播流并按需落到本地 FLV 代理。`session` 用于多路代理隔离（多屏一格一路），
+ * 应当由调用方持有，并在关闭时回传给 `stopDouyuProxy`。
+ */
 export async function getDouyuStreamConfig(
   roomId: string,
   quality: string = '原画',
   line?: string | null,
-): Promise<{ streamUrl: string, streamType: string | undefined }> {
+  session?: string | null,
+): Promise<DouyuStreamConfig> {
   let finalStreamUrl: string | null = null;
   let streamType: string | undefined = undefined;
   const MAX_STREAM_FETCH_ATTEMPTS = 2;
@@ -18,7 +27,7 @@ export async function getDouyuStreamConfig(
         quality: quality,
         line: line ?? null,
       });
-      
+
       if (streamUrl) {
         finalStreamUrl = enforceHttps(streamUrl);
         streamType = 'flv';
@@ -48,7 +57,7 @@ export async function getDouyuStreamConfig(
       if (attempt === MAX_STREAM_FETCH_ATTEMPTS) {
         throw new Error(`获取斗鱼直播流失败 (尝试 ${MAX_STREAM_FETCH_ATTEMPTS} 次后): ${e.message}`);
       }
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); 
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
   }
 
@@ -56,26 +65,27 @@ export async function getDouyuStreamConfig(
     throw new Error('未能获取有效的斗鱼直播流地址。');
   }
 
+  const sessionKey = session ?? null;
   try {
-    await invoke('set_stream_url_cmd', { url: finalStreamUrl });
+    await invoke('set_stream_url_cmd', { session: sessionKey, url: finalStreamUrl });
     const proxyUrl = await invoke<string>('start_proxy');
-    douyuProxyActive = true;
-    return { streamUrl: proxyUrl, streamType };
+    // 带 session 的代理 URL（多路隔离）；空 session 则保持旧格式
+    const proxied = sessionKey ? `${proxyUrl}/${encodeURIComponent(sessionKey)}` : proxyUrl;
+    return { streamUrl: proxied, streamType, proxySession: sessionKey };
   } catch (e: any) {
     throw new Error(`设置斗鱼代理失败: ${e.message}`);
   }
 }
 
-export async function stopDouyuProxy(): Promise<void> {
-  if (!douyuProxyActive) {
-    return;
-  }
+/**
+ * 关闭斗鱼代理某 session；由调用方传入之前 `getDouyuStreamConfig` 返回的 `proxySession`，
+ * 避免 module-level 共享状态导致的多路误关。
+ */
+export async function stopDouyuProxy(session: string | null): Promise<void> {
   try {
-    await invoke('stop_proxy');
-    douyuProxyActive = false;
+    await invoke('stop_proxy', { session: session ?? null });
   } catch (e) {
     console.error('[DouyuPlayerHelper] Error stopping proxy server:', e);
-    douyuProxyActive = false;
   }
 }
 

@@ -32,6 +32,13 @@
   transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   box-shadow: var(--glass-shadow, 0 10px 22px rgba(6, 10, 20, 0.28));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  position: relative;
+  user-select: none;
+  outline: none;
+}
+
+.chip:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent), var(--glass-shadow, 0 10px 22px rgba(6, 10, 20, 0.28));
 }
 
 .chipActive {
@@ -50,11 +57,52 @@
   box-shadow: none;
 }
 
+.chipRemoveBtn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.chip:hover .chipRemoveBtn,
+.chip:focus-within .chipRemoveBtn,
+.chipActive .chipRemoveBtn {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.chipRemoveBtn:hover {
+  background: rgba(255, 64, 64, 0.92);
+  color: #ffffff;
+}
+
+.chipActive .chipRemoveBtn {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.chipRemoveBtn:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
 .chipPlatform {
-  font-size: 10px;
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.35px;
-  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 3px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
 }

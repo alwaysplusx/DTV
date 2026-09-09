@@ -18,8 +18,26 @@ pub async fn handle_received_messages(
     app_handle: tauri::AppHandle, // Added AppHandle
     room_id: String,              // Added room_id parameter
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    debug!("[Douyin Danmaku] Message handler started for room_id: {}", room_id);
-    while let Some(message_result) = read_stream.next().await {
+    debug!(
+        "[Douyin Danmaku] Message handler started for room_id: {}",
+        room_id
+    );
+    // 僵尸连接看门狗：健康连接每隔几秒必有下行（ping 的 pong / 服务端 hb 推送）。
+    // 半开 TCP 上 read 永远挂起且不报错，只能靠读超时打破，交给外层重连循环。
+    loop {
+        let message_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(180),
+            read_stream.next(),
+        )
+        .await
+        {
+            Ok(Some(result)) => result,
+            Ok(None) => break,
+            Err(_) => {
+                warn!("[Douyin Danmaku] No inbound data for 180s, treating connection as dead.");
+                break;
+            }
+        };
         match message_result {
             Ok(ws_msg) => {
                 if let WsMessage::Binary(bin_data) = ws_msg {
@@ -57,7 +75,7 @@ pub async fn handle_received_messages(
                                             }
                                         }
                                         for msg in response.messages_list {
-                                            // println!("  -> Method: {}, Payload Length: {}", msg.method, msg.payload.len());
+                                            // log::info!("  -> Method: {}, Payload Length: {}", msg.method, msg.payload.len());
                                             let mut danmaku_to_send = None;
                                             if msg.method == "WebcastChatMessage" {
                                                 match message_parsers::parse_chat_message(
@@ -87,14 +105,16 @@ pub async fn handle_received_messages(
                                             }
                                         }
                                     }
-                                    Err(e) => warn!("[Douyin Danmaku] Failed to parse Response: {}", e),
+                                    Err(e) => {
+                                        warn!("[Douyin Danmaku] Failed to parse Response: {}", e)
+                                    }
                                 }
                             } else if push_frame.payload_type == "ack" {
                                 // Optional: log received ACKs from server
-                                // println!("[Douyin Danmaku] Received ACK from server for log_id: {}", push_frame.log_id);
+                                // log::info!("[Douyin Danmaku] Received ACK from server for log_id: {}", push_frame.log_id);
                             } else if push_frame.payload_type == "hb" {
                                 // Optional: log received server heartbeats
-                                // println!("[Douyin Danmaku] Received Heartbeat from server.");
+                                // log::info!("[Douyin Danmaku] Received Heartbeat from server.");
                             }
                         }
                         Err(e) => warn!("[Douyin Danmaku] Failed to parse PushFrame: {}", e),
@@ -104,7 +124,10 @@ pub async fn handle_received_messages(
                         warn!("[Douyin Danmaku] Failed to send PONG from message_handler");
                     }
                 } else if let WsMessage::Close(close_frame) = ws_msg {
-                    debug!("[Douyin Danmaku] WebSocket closed by server: {:?}", close_frame);
+                    debug!(
+                        "[Douyin Danmaku] WebSocket closed by server: {:?}",
+                        close_frame
+                    );
                     break;
                 }
             }

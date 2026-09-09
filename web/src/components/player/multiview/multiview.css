@@ -1,0 +1,506 @@
+/* 多屏直播网格 —— docs/multiview-layouts.md */
+
+.mv-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── 工具条（布局选择器 / 退出） ─────────────────────────── */
+
+.mv-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(16, 19, 28, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.mv-root.mv-chrome-hidden .mv-toolbar {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+  pointer-events: none;
+}
+
+.mv-layout-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mv-layout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.mv-layout-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.mv-layout-btn.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+/* 布局缩略图：按钮统一 34×34，横版 22×14 / 竖版 14×22，保持横竖语义 */
+.mv-layout-icon {
+  display: grid;
+  width: 22px;
+  height: 14px;
+  gap: 2px;
+}
+
+.mv-layout-icon.is-vertical {
+  width: 14px;
+  height: 22px;
+}
+
+.mv-layout-icon i {
+  display: block;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.mv-layout-icon.is-active i,
+.mv-layout-btn:hover .mv-layout-icon i {
+  opacity: 0.95;
+}
+
+.mv-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.mv-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.mv-exit-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.mv-exit-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+
+/* 工具栏图标按钮（搜索等），与布局/退出按钮同尺寸同圆角 */
+.mv-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.mv-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+
+.mv-icon-btn.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.mv-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.mv-exit-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ── 网格 ─────────────────────────────────────────────── */
+
+.mv-grid {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: #000;
+}
+
+/* ── 单格 ─────────────────────────────────────────────── */
+
+.mv-cell-holder {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mv-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  border-radius: 4px;
+}
+
+.mv-cell.is-focus {
+  box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.75);
+}
+
+.mv-cell.is-mirror-flipped video {
+  transform: scaleX(-1);
+}
+
+.mv-cell-video {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  background: #000;
+}
+
+.mv-cell-video .video-player {
+  min-height: 0;
+}
+
+/* ── 格顶栏（关闭按钮 + 标题药丸） ─────────────────── */
+
+.mv-cell-topbar {
+  position: absolute;
+  /* 60px：与单屏 player-topbar (top:52 + streamer padding 8 = 60) 对齐；
+     多屏要让 mv-toolbar 让位：mv-toolbar top:10 + 内容 34 + 底缘余量 ≈ 60px */
+  top: 60px;
+  left: 10px;
+  right: 10px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+
+.mv-cell-topbar > * {
+  pointer-events: auto;
+}
+
+.mv-root.mv-chrome-hidden .mv-cell-topbar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 关闭按钮：与单屏 .player-close-btn 视觉一致（圆+blur+暗底+同色边框），
+   缩到 34×34 适配小格，svg 18px */
+.mv-cell-close-btn {
+  flex: 0 0 auto;
+  position: relative;
+  background: rgba(10, 10, 12, 0.62);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+.mv-cell-close-btn:hover {
+  background: rgba(10, 10, 12, 0.62);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.mv-cell-close-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.mv-cell-close-btn:hover svg {
+  transform: rotate(90deg);
+}
+
+.mv-cell-streamer {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 999px;
+  background: rgba(10, 10, 12, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+.mv-cell-avatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mv-cell-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mv-cell-avatarFallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.88);
+  background: radial-gradient(120% 120% at 30% 20%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06));
+}
+
+.mv-cell-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mv-cell-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: rgba(245, 247, 250, 0.95);
+  max-width: 48vw;
+}
+
+.mv-cell-sub {
+  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(245, 247, 250, 0.72);
+  max-width: 48vw;
+}
+
+.mv-cell-tool {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.92);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mv-cell-tool:hover {
+  background: transparent;
+}
+
+.mv-cell-tool.is-zoomed {
+  color: #0a84ff;
+}
+
+/* 切换格按钮 / 弹出独立窗口按钮：去掉 hover 颜色高亮，仅保留 transform 反馈 */
+.mv-cell-replace:hover,
+.mv-cell-popout:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* 关注按钮：与单屏 MainPlayer 顶栏同语义；is-active 时显示已关注态 */
+.mv-cell-follow.is-active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.mv-cell-follow.is-active:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.mv-cell-follow-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  line-height: 0;
+}
+
+.mv-cell-follow-glyph svg {
+  display: block;
+}
+
+.mv-cell-tool svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── 空格占位 ─────────────────────────────────────────── */
+
+.mv-cell-empty {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(13, 16, 23, 0.9);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.5);
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.mv-cell-empty:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(19, 23, 33, 0.92);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.mv-cell-empty:focus-visible {
+  outline: 2px solid rgba(10, 132, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.mv-cell-empty.is-drop-target {
+  border-color: rgba(10, 132, 255, 0.7);
+  background: rgba(10, 132, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.mv-cell-empty-icon {
+  opacity: 0.65;
+}
+
+.mv-cell-empty-icon svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.mv-cell-empty-text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ── 小格 xgplayer 控制栏压缩 ─────────────────────────── */
+
+.mv-cell .xgplayer-controls {
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.mv-cell .xgplayer-left-cluster,
+.mv-cell .danmu-control-group {
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 14px;
+}
+
+.mv-cell .xgplayer-volume-control .volume-slider {
+  width: 56px;
+}
+
+/* 多屏下隐藏 PiP 与全屏入口（格级 CSS 全屏由格顶栏承担） */
+.mv-cell .xgplayer-pip,
+.mv-cell .xgplayer-get-fullscreen,
+.mv-cell .xgplayer-css-fullscreen {
+  display: none !important;
+}

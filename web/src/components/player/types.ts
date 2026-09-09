@@ -28,6 +28,7 @@ export interface DanmuOverlayInstance {
     duration?: number;
     start?: number;
     mode?: string;
+    sender?: string;
     style?: Record<string, string>;
   }) => void;
   clear?: () => void;
@@ -40,7 +41,7 @@ export interface DanmuOverlayInstance {
   setOpacity?: (opacity: number) => void;
   setFontSize?: (size: number | string, channelSize?: number) => void;
   setAllDuration?: (mode: string, duration: number) => void;
-  setArea?: (area: { start: number; end: number; lines?: number }) => void;
+  setArea?: (area: { start?: number; end: number; lines?: number }) => void;
   setPlayRate?: (mode: string, rate: number) => void;
 }
 
