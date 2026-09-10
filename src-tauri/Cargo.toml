@@ -74,6 +74,7 @@ tauri-winrt-notification = "0.7"
 [profile.release]
 panic = "unwind"
 codegen-units = 1
-lto = true
+# Apple 的 ld 加载不了 Rust LTO bitcode（macOS 本机/CI 均如此），固定关闭
+lto = false
 opt-level = "z"
 strip = true

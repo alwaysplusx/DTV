@@ -54,7 +54,7 @@ DTV/
 - macOS 构建在链接期通过 `-platform_version` 把二进制记录的 sdk 抬到 26.0（见 `build.rs` 内注释）：macOS 26 (Tahoe) 只对 sdk>=26 的二进制启用新版窗口控件，否则主窗口红绿灯保持旧样式（更小、色更实）。用 `otool -l <binary> | grep -A4 LC_BUILD_VERSION` 可验证 sdk 字段；不要删这段链接参数。
 - 首次构建前需要的系统包：
   - **Windows**：`protoc`、Strawberry Perl、NASM（CI：`choco install protoc`；`choco install strawberryperl nasm -y`）。另外必须设置 `RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v0.93.1/rusty_v8_release_x86_64-pc-windows-msvc.lib.gz`，让 MSVC 能拿到预编译的 `rusty_v8` 静态库。
-  - **macOS**：`brew install protobuf pkg-config nasm`。CI 会设置 `CARGO_PROFILE_RELEASE_LTO=false`，因为 Apple 的 `ld` 加载不了 Rust LTO bitcode —— 本地发布构建也要镜像这一项。
+  - **macOS**：`brew install protobuf pkg-config nasm`。Apple 的 `ld` 加载不了 Rust LTO bitcode —— `profile.release` 已固定 `lto = false`，本机裸跑 `pnpm tauri build` 即可；`build.yml` 的 macOS job 仍设 `CARGO_PROFILE_RELEASE_LTO=false` 作兜底（Windows/Linux CI 产物也随之不开 LTO）。
   - **Linux**：`libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler pkg-config perl build-essential`。
 - 根 `package.json#pnpm.onlyBuiltDependencies` 白名单里有 `core-js`、`esbuild`、`es5-ext`、`sharp`。新增其它原生依赖要显式加入白名单。
 
