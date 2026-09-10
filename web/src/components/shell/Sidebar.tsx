@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
+import { Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
 import styles from "./Sidebar.module.css";
 import { FollowsList } from "@/components/follows/FollowsList";
 import { FollowsRail } from "@/components/follows/FollowsRail";
@@ -196,15 +196,6 @@ export function Sidebar({
         onMouseEnter={dockImmersive ? revealDockPeek : undefined}
         onMouseLeave={dockImmersive ? hideDockPeekSoon : undefined}
       >
-        <button
-          type="button"
-          className={`${styles.drawerHandle} ${subtle ? styles.drawerHandleSubtle : ""}`}
-          onClick={onToggle}
-          aria-label={isCollapsed ? "展开关注栏" : "收起关注栏"}
-          title={isCollapsed ? "展开关注栏" : "收起关注栏"}
-        >
-          {isCollapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
-        </button>
         <div className={styles.sidebarStage}>
           {/* 两块面板常驻挂载、railShown 节拍只切可见性：切换折叠不卸载重挂，
               头像 <img> 不重建不闪（此前整块换挂是开合顿挫的主因） */}

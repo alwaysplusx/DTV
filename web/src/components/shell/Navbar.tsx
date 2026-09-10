@@ -430,7 +430,7 @@ export function Navbar({
               className={styles.searchInput}
               onFocus={() => {
                 setIsSearchFocused(true);
-                if (!spotlight.state.isOpen) spotlight.actions.open();
+                if (!spotlight.state.isOpen) spotlight.actions.open(navbarInputRef.current);
               }}
               onBlur={() => setIsSearchFocused(false)}
               onKeyDown={(e) => {
@@ -458,7 +458,7 @@ export function Navbar({
               aria-label="搜索"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                if (!spotlight.state.isOpen) spotlight.actions.open();
+                if (!spotlight.state.isOpen) spotlight.actions.open(navbarInputRef.current);
                 else spotlight.actions.submitNumeric(openInMain);
               }}
             >

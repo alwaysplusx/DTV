@@ -73,8 +73,9 @@
 }
 
 /* 底部三键簇（收起/展开锚点 + 主题 + 设置）：锚点不动（left:22/bottom:12，44px 按钮在
-   88px 迷你条水平居中），主题/设置为两枚 44px 滑块，基准位=横排位（中心 x=86/138、bottom 中线 34）：
-   收起第一段向左滑拢到锚点列并淡出；竖列位在锚点列正上方（水平位移 42/94、列距 52/104），
+   88px 迷你条水平居中），主题/设置为两枚 44px 滑块，基准位=横排位（中心 x=96/148、bottom 中线 34）：
+   收起第一段向左滑拢到锚点列并淡出；竖列位在锚点列正上方（水平位移 52/104、列距 52/104，
+   横竖两向同为 52 中心距=8px 间隙，锚点 left:22 由迷你条居中定死，故滑块基准取 74/126），
    宽度动画落定后从 (-x,0) 升到 (-x,-y) 即纯上升=从下到上依次展开；展开时竖直+水平滑回横排位 */
 .footerCluster {
   position: relative;
@@ -98,37 +99,37 @@
 }
 
 /* ---- 滑块四态取值：始终生效（启动回读/减少动效时直接落位，不依赖门控） ----
-   竖列固定位在锚点列正上方（水平位移 42/94，竖直列距 52/104），四态全部用 transform 表达 */
+   竖列固定位在锚点列正上方（水平位移 52/104，竖直列距 52/104），四态全部用 transform 表达 */
 /* 竖列固定位（收起落定态） */
 .footerRail .footerSlideNear {
-  transform: translate(-42px, -52px);
+  transform: translate(-52px, -52px);
   opacity: 1;
 }
 
 .footerRail .footerSlideFar {
-  transform: translate(-94px, -104px);
+  transform: translate(-104px, -104px);
   opacity: 1;
 }
 
 /* 收起第一段：从右往左滑到锚点列（left:22）并淡出 */
 .footerCollapsing .footerSlideNear {
-  transform: translateX(-42px);
+  transform: translateX(-52px);
   opacity: 0;
 }
 
 .footerCollapsing .footerSlideFar {
-  transform: translateX(-94px);
+  transform: translateX(-104px);
   opacity: 0;
 }
 
 /* 展开第一段：自竖列位原地下沉到锚点列并淡出（x 不变，纯竖直方向） */
 .footerExpandOut .footerSlideNear {
-  transform: translate(-42px, 0);
+  transform: translate(-52px, 0);
   opacity: 0;
 }
 
 .footerExpandOut .footerSlideFar {
-  transform: translate(-94px, 0);
+  transform: translate(-104px, 0);
   opacity: 0;
 }
 
@@ -193,11 +194,11 @@
 }
 
 .footerSlideNear {
-  left: 64px;
+  left: 74px;
 }
 
 .footerSlideFar {
-  left: 116px;
+  left: 126px;
 }
 
 /* 三键统一质感：44px 圆角、subtle 底（复用原 railFooterBtn 语言） */
@@ -238,52 +239,7 @@
   border-color: rgba(148, 163, 184, 0.35);
 }
 
-/* 抽屉拉手 — 右侧圆角标签，左侧与面板平齐 */
-/* 提高选择器优先级以覆盖全局 button reset */
-.sidebarShell button.drawerHandle {
-  position: absolute;
-  right: -14px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 80px;
-  border-radius: 0 6px 6px 0;
-  border-top: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  border-left: none;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  z-index: 20000;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.sidebarShell button.drawerHandle:hover {
-  color: var(--text-primary);
-}
-
-.sidebarShell button.drawerHandle:active {
-  color: var(--text-primary);
-}
-
-/* 微可见态：播放时拉手浮在画面之上低调可见 */
-.sidebarShell button.drawerHandleSubtle {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.sidebarShell button.drawerHandleSubtle:hover {
-  background: var(--bg-secondary);
-  border-color: var(--border);
-  color: var(--text-primary);
-}
-
-/* 折叠迷你条播放/全屏时浮在画面上：半透明底 + 弱化描边（与把手 subtle 同语言） */
+/* 折叠迷你条播放/全屏时浮在画面上：半透明底 + 弱化描边 */
 .sidebarShell.railSubtle {
   background: rgba(255, 255, 255, 0.08);
   border-right-color: rgba(255, 255, 255, 0.1);

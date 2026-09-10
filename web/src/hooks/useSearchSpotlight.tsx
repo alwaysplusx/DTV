@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { m } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { createPortal } from "react-dom";
 import { Search, Users, X } from "lucide-react";
 
@@ -54,8 +54,11 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [searchFilter, setSearchFilter] = useState<SpotlightFilter>("all");
   const [searchSpotlightOpen, setSearchSpotlightOpen] = useState(false);
+  // 弹出/收回动画的锚点：触发 spotlight 的那个搜索框/按钮元素
+  const [spotlightAnchor, setSpotlightAnchor] = useState<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const open = useCallback(() => {
+  const open = useCallback((anchor?: HTMLElement | null) => {
+    setSpotlightAnchor(anchor ?? null);
     setSearchFilter("all");
     setSearchSpotlightOpen(true);
   }, []);
@@ -209,9 +212,30 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
     });
   }, []);
 
+  // 卡片静止位是 overlay 的 flex 居中 + padding-top 18vh，可由视口直接算出（卡片高度动态但不参与对齐）。
+  // 变换取 transform-origin 顶中：缩放平移后卡片顶中与锚点框顶中重合，视觉上即"从搜索框长出来/缩回去"。
+  const spotlightOrigin = useMemo(() => {
+    const el = spotlightAnchor;
+    if (!el || typeof window === "undefined") return null;
+    const a = el.getBoundingClientRect();
+    // 锚点不可见（如播放页收起的搜索框 display:none）时矩形为 0，退回默认动画
+    if (!a.width || !a.height) return null;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const cardWidth = Math.min(560, vw * 0.92);
+    const cardLeft = (vw - cardWidth) / 2;
+    const cardTop = Math.round(vh * 0.18);
+    return {
+      x: a.left + a.width / 2 - (cardLeft + cardWidth / 2),
+      y: a.top - cardTop,
+      scale: Math.max(0.16, Math.min(1, a.width / cardWidth))
+    };
+  }, [spotlightAnchor]);
+
   // chip 滑动胶囊（spotlight 内部自管）
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const chipContainerRef = useRef<HTMLDivElement | null>(null);
+  const spotlightCardRef = useRef<HTMLDivElement | null>(null);
   const [chipHighlight, setChipHighlight] = useState<{ width: number; x: number; opacity: number }>({ width: 0, x: 0, opacity: 0 });
   const chipHighlightMotion = useMemo(
     () => ({
@@ -226,13 +250,21 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
   const updateChipHighlight = useCallback(() => {
     const el = chipRefs.current[searchFilter];
     const container = chipContainerRef.current;
+    const card = spotlightCardRef.current;
     if (!el || !container) {
       setChipHighlight((prev) => ({ ...prev, opacity: 0 }));
       return;
     }
+    // 锚点弹出动画期间卡片带 scale，getBoundingClientRect 是视觉尺寸；按当前缩放反推布局值，
+    // 否则挂载首帧会把胶囊量成 ~0.2 倍宽并停在那里
+    let scale = 1;
+    if (card) {
+      const visual = card.getBoundingClientRect().width;
+      if (visual > 0 && card.offsetWidth > 0) scale = visual / card.offsetWidth;
+    }
     const c = container.getBoundingClientRect();
     const r = el.getBoundingClientRect();
-    setChipHighlight({ width: r.width, x: r.left - c.left, opacity: 1 });
+    setChipHighlight({ width: r.width / scale, x: (r.left - c.left) / scale, opacity: 1 });
   }, [searchFilter]);
 
   useLayoutEffect(() => {
@@ -246,24 +278,46 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
     return () => window.removeEventListener("resize", onResize);
   }, [updateChipHighlight, searchSpotlightOpen]);
 
-  // 渲染 Spotlight 浮层（唯一一份）
+  // 渲染 Spotlight 浮层（唯一一份；进出场均从锚点位置弹出/收回）
   const renderSpotlight = useCallback(() => {
-    if (!searchSpotlightOpen || typeof document === "undefined") return null;
+    if (typeof document === "undefined") return null;
     const showResults = !!searchQuery.trim();
+    // AnimatePresence 退场期间沿用关闭前快照，query/results 虽被 close() 清空也不会闪变
+    const originFrom = spotlightOrigin
+      ? { opacity: 0, x: spotlightOrigin.x, y: spotlightOrigin.y, scale: spotlightOrigin.scale }
+      : { opacity: 0, y: -14, scale: 0.97 };
     return createPortal(
-      <div
-        className={styles.searchSpotlightOverlay}
-        role="presentation"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) close();
-        }}
-      >
-        <div
-          className={styles.searchSpotlightCard}
-          role="dialog"
-          aria-label="搜索"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
+      <AnimatePresence>
+        {searchSpotlightOpen ? (
+          <m.div
+            key="search-spotlight"
+            className={styles.searchSpotlightOverlay}
+            role="presentation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.16, ease: "easeIn" } }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) close();
+            }}
+          >
+            <m.div
+              ref={spotlightCardRef}
+              className={styles.searchSpotlightCard}
+              role="dialog"
+              aria-label="搜索"
+              initial={originFrom}
+              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              exit={{ ...originFrom, transition: { duration: 0.2, ease: "easeIn" } }}
+              transition={{
+                type: "spring",
+                stiffness: 460,
+                damping: 40,
+                mass: 0.85,
+                opacity: { duration: 0.16, ease: "easeOut" }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
           <div className={styles.searchSpotlightInputWrap}>
             <Search size={20} className={styles.searchSpotlightIcon} />
             <input
@@ -440,8 +494,10 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
               <div className={styles.searchMeta}>输入关键词搜索主播 / 直播间</div>
             )}
           </div>
-        </div>
-      </div>,
+            </m.div>
+          </m.div>
+        ) : null}
+      </AnimatePresence>,
       document.body
     );
   }, [
@@ -457,7 +513,8 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
     searchFilter,
     searchQuery,
     searchResults,
-    searchSpotlightOpen
+    searchSpotlightOpen,
+    spotlightOrigin
   ]);
 
   return {

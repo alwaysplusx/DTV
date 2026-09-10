@@ -252,7 +252,7 @@ export function MultiViewGrid() {
           className="mv-icon-btn"
           title="搜索主播 / 房间"
           aria-label="搜索"
-          onClick={() => mvSearch.actions.open()}
+          onClick={(e) => mvSearch.actions.open(e.currentTarget)}
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
@@ -293,11 +293,11 @@ export function MultiViewGrid() {
                 tabIndex={0}
                 className={`mv-cell-empty${dropTargetSlot === index ? " is-drop-target" : ""}`}
                 style={isFocusSlot ? { gridRow: `span ${layoutDef.focusSpanRows ?? 1}` } : undefined}
-                onClick={() => mvSearch.actions.open()}
+                onClick={(e) => mvSearch.actions.open(e.currentTarget)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    mvSearch.actions.open();
+                    mvSearch.actions.open(e.currentTarget as HTMLElement);
                   }
                 }}
                 onDragOver={(e) => {

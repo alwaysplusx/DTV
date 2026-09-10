@@ -1786,7 +1786,7 @@ export function MainPlayer({
                       className="player-topbar-iconBtn"
                       title="搜索主播 / 房间"
                       aria-label="搜索"
-                      onClick={() => playerSearch.actions.open()}
+                      onClick={(e) => playerSearch.actions.open(e.currentTarget)}
                     >
                       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <circle cx="11" cy="11" r="7" />
@@ -1822,18 +1822,16 @@ export function MainPlayer({
                         <rect x="14" y="14" width="7" height="7" rx="1.2" />
                       </svg>
                     </button>
-                    {isWindows ? (
-                      <button
-                        type="button"
-                        className={`player-topbar-iconBtn ${isAlwaysOnTop ? " is-active" : ""}`}
-                        title={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
-                        aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
-                        aria-pressed={isAlwaysOnTop}
-                        onClick={toggleAlwaysOnTop}
-                      >
-                        <PinIcon filled={isAlwaysOnTop} />
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className={`player-topbar-iconBtn ${isAlwaysOnTop ? " is-active" : ""}`}
+                      title={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+                      aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
+                      aria-pressed={isAlwaysOnTop}
+                      onClick={toggleAlwaysOnTop}
+                    >
+                      <PinIcon filled={isAlwaysOnTop} />
+                    </button>
                   </div>
                 </div>
               </div>

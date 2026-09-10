@@ -240,7 +240,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       <Sidebar isCollapsed={isSidebarCollapsed} isPlayerActive={playerActive} onToggle={toggleSidebar} immersive={shouldHidePlayerChrome} />
 
       {/* macOS 交通灯旁常驻药丸：应用级窗口置顶，全视图常驻（不随 idle 隐藏）。
-          portal 到 body + z-index:10001，与侧边栏把手同一模式，逃逸所有层叠上下文，
+          portal 到 body + z-index:10001，逃逸所有层叠上下文，
           稳居侧边栏(100)/播放覆盖层(500)/CSS 全屏播放器(9999) 之上。
           hydrated gate 避免 SSR/客户端 portalTarget 不一致的 hydration mismatch。
           折叠态淡出（player-pin-pill-hidden）：迷你条只有 88px，药丸紧贴灯组右缘会连成一串。 */}

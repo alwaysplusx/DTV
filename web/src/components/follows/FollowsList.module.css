@@ -65,6 +65,10 @@
   color: rgba(100, 116, 139, 1);
 }
 
+/* 表头按钮组：整体成一组胶囊（不拆散），质感对齐底部三键簇（Sidebar.footerClusterBtn）：
+   容器底/描边/内高光用底部同值（0.05/0.1/0.08），内部按钮 hover 同底部悬停色（0.1/0.16）。
+   margin-top 4 必须保留：表头总高 48 = 容器 44（按钮 34 + 上下垫 8 + 边 2）+ 4，
+   参与展开/折叠首头像逐像素对齐契约，改总高会让展开态整列头像位移、折叠瞬间重影 */
 .headerActions {
   display: flex;
   align-items: center;
@@ -72,29 +76,30 @@
   padding: 4px;
   margin-top: 4px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 :global(:root[data-theme="light"]) .headerActions {
-  background: rgba(15, 23, 42, 0.04);
-  border-color: rgba(148, 163, 184, 0.35);
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.28);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
 .actionBtn {
   width: 34px;
   height: 34px;
+  flex: 0 0 auto;
   border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--secondary-text);
+  color: var(--text-primary);
   background: transparent;
   border: 1px solid transparent;
-  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .actionBtn :global(svg) {
@@ -102,16 +107,18 @@
 }
 
 .actionBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--primary-text);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.actionBtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
 }
 
 :global(:root[data-theme="light"]) .actionBtn:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(248, 250, 252, 1);
   border-color: rgba(148, 163, 184, 0.35);
-  color: rgba(15, 23, 42, 1);
 }
 
 .headerStaticIcon {
@@ -135,15 +142,15 @@
   height: 34px;
   padding: 0 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--secondary-text);
   font-size: 12px;
   font-weight: 700;
 }
 
 :global(:root[data-theme="light"]) .progressWithSpinner {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(248, 250, 252, 1);
   border-color: rgba(148, 163, 184, 0.35);
   color: #475569;
 }

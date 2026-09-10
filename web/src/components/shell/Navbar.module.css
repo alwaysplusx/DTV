@@ -444,14 +444,9 @@
   justify-content: center;
   padding-top: 18vh;
   z-index: 30001;
-  animation: navSpotlightOverlayIn 0.18s ease-out;
 }
 
-@keyframes navSpotlightOverlayIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
+/* 进出场 transform/opacity 由 useSearchSpotlight 里的 framer-motion 驱动（锚点弹出/收回） */
 .searchSpotlightCard {
   width: min(560px, 92vw);
   border-radius: 18px;
@@ -459,19 +454,7 @@
   border: 1px solid var(--border);
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   overflow: hidden;
-  animation: navSpotlightIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
   transform-origin: top center;
-}
-
-@keyframes navSpotlightIn {
-  from {
-    opacity: 0;
-    transform: translateY(-14px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .searchSpotlightInputWrap {
