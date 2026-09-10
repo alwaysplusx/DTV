@@ -86,7 +86,7 @@
   --border-width: 1px;
 
   --sidebar-width: 240px;
-  --sidebar-collapsed-width: 68px;
+  --sidebar-collapsed-width: 88px;
   /* 关注栏折叠/展开宽度动画时长+缓动；改这里时同步 Sidebar.tsx 的 COLLAPSE_SWAP_MS */
   --sidebar-anim: 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
   --navbar-height: 72px;
@@ -363,10 +363,11 @@ ul {
 
 /* macOS 交通灯右侧置顶药丸 —— AppShell 常驻渲染，故样式必须在全局表里
    （player.css 仅在 MainPlayer 挂载时加载，首页/非播放页不会加载，导致药丸无样式、不可见）。
-   无背景；未激活灰色倾斜细描线、已激活蓝色垂直实心；无 CSS filter、无光晕，保持小尺寸清晰。 */
+   无背景；未激活灰色倾斜细描线、已激活蓝色垂直实心；无 CSS filter、无光晕，保持小尺寸清晰。
+   left 与灯组联动：灯组 x=14 + 宽 60 = 右缘 74，药丸留 2px 间距落在 76。 */
 .player-pin-pill {
   position: fixed;
-  left: 80px;
+  left: 76px;
   top: 28px;
   width: 16px;
   height: 16px;
@@ -384,6 +385,12 @@ ul {
 
 .player-pin-pill.is-active {
   color: #0a84ff;
+}
+
+/* 折叠态隐藏：迷你条仅 88px，药丸会紧贴灯组连成一串；复用上方 opacity 过渡平滑淡出 */
+.player-pin-pill.player-pin-pill-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .player-pin-pill.is-active:hover {

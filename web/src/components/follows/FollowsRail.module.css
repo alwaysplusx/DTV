@@ -1,4 +1,5 @@
-/* 68px 折叠态侧栏头像迷你条（44px 内容 + 两侧各 12px 呼吸位，与展开态内边距一致） */
+/* 88px 折叠态侧栏头像迷你条：头像复用 FollowsList 的 44px 基类（两态同尺寸），
+   右垫 4px 使列内容中线落在 42 → 首个头像左缘 20px，与展开态行内（12+8）完全同位 */
 
 .railShell {
   width: 100%;
@@ -17,8 +18,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 0 8px;
+  /* 44+12 = 56px 头像节奏，与展开态行距（44+2×5+2）一致：切换时各行头像零位移 */
+  gap: 12px;
+  /* 左垫必须为 0、只留右垫 4：中线才落在 42（44px 头像左缘 20，与展开态行内 12+8 同位）。
+     左垫非 0 会让整列头像右移 2px——两态交叉淡变时同一头像错位 4 个设备像素，就是折叠瞬间的重影闪烁。
+     上垫 12 = 表头 61 + 12 = 73 与展开态首行头像同顶（同为空 10px 时迷你条高 2px） */
+  padding: 12px 4px 8px 0;
   touch-action: pan-y;
 }
 
@@ -46,23 +51,6 @@
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease;
-}
-
-/* 复用 FollowsList 的 40px 头像基类，这里用更高优先级覆盖成 44px（与 footer 按钮同尺寸） */
-.railScroll .railAvatarWrap {
-  width: 44px;
-  height: 44px;
-}
-
-.railScroll .railAvatar {
-  width: 44px;
-  height: 44px;
-}
-
-/* 基类红点 12px 对应 40px 头像，44px 按比例放大到 13px */
-.railScroll .railLiveDot {
-  width: 13px;
-  height: 13px;
 }
 
 .railAvatarBtn:hover {
@@ -223,18 +211,31 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  /* 与 railScroll 同 12px：未开播组内头像也保持 56px 节奏 */
+  gap: 12px;
   overflow: hidden;
 }
 
 /* 迷你表头：顶部 Users 与底部按钮同款按钮底+颜色（railFooterBtn 复用），纵向居中与底部成列；
-   span 不接事件，按下落在带 data-tauri-drag-region 的容器上才能拖窗 */
+   span 不接事件，按下落在带 data-tauri-drag-region 的容器上才能拖窗。
+   总高压到 61（= railHeaderMac 的交通灯让位高度）：两态首行头像同顶，跨平台也一致 */
 .railHeader {
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
-  padding: 10px 0 0;
+  padding: 10px 0 7px;
   color: var(--secondary-text);
+}
+
+/* macOS 交通灯位 + 头像水平线对齐：灯组（sdk>=26 样式）3×14pt + 间距 23 共宽 60pt；AppKit 原生
+   默认左缘 9pt（HIG 无坐标，系统自动排布的事实标准）。取 x=14 = (88-60)/2：组 14..74 在 88px
+   迷你条内左右对称各 14px（仍比原生 9pt 内缩）；y=33 时灯组占窗口纵向 y24..38。
+   高度 61px 是交通灯让位值；首行头像顶部由 61 + railScroll 上垫 12 = 73 决定，须与展开态首行
+   （followList 上边距 10 + 表头 46 + 间距 10 + 行边距 5 ≈ 73）同顶——两态相差 1~2px 就会在
+   交叉淡变时出现头像重影。改表头/上垫/行边距/头像尺寸须同步此链。
+   Windows 头部同为 61px 总高（见 .railHeader 的 padding），不受影响 */
+.railHeaderMac {
+  height: 61px;
 }
 
 .railHeaderIcon {

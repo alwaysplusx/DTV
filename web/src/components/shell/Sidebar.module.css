@@ -24,18 +24,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* !important：压过上方 3 类选择器的门控过渡规则，确保减少动效时滑块直接落位 */
   .sidebarShell.anim,
   .sidebarShell.immersiveDock,
   .footerClusterAnim,
-  .footerClusterAnim .footerArm,
-  .footerClusterAnim .footerArmFace {
-    transition: none;
+  .footerClusterAnim .footerSlideBtn {
+    transition: none !important;
   }
 }
 
 /* 折叠/展开内容舞台：overflow 裁剪做“抽屉开合”。
-   展开态与迷你条各自按目标宽度(240/68)排版、都贴左对齐，容器宽度过渡时只裁不回流；
-   两者底栏按钮/表头头像本已“同位”，宽度落定后整块切换几乎无位移。
+   展开态与迷你条各自按目标宽度(240/88)排版、都贴左对齐，容器宽度过渡时只裁不回流；
+   两面板常驻挂载（不随折叠卸载重挂，头像不闪），railShown 节拍切 paneHidden 可见性。
+   切换是硬切、不做交叉淡变：两块面板的头像列本就同坐标同尺寸，硬切下 6 个头像逐像素不动
+   （实测 20px 起、56px 节奏、首行同顶）；曾用 180ms 交叉淡变，两块面板的位图在淡变中叠加，
+   整列头像发白重影（对比度实测 46→35、约 150ms），正是收起/展开瞬间的“闪烁”。
+   硬切后仅第 7 格（未开播头像 ↔ 未开播计数按钮）instant 替换。
    高度是 aside 减掉下方固定三键簇的高度（收起 170 / 展开 68） */
 .sidebarStage {
   position: relative;
@@ -52,6 +56,12 @@
   bottom: 0;
 }
 
+.paneHidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .listPane {
   width: var(--sidebar-width);
   display: flex;
@@ -62,10 +72,10 @@
   width: var(--sidebar-collapsed-width);
 }
 
-/* 底部三键簇（收起/展开锚点 + 主题 + 设置）：锚点不动，主题/设置以锚点中心为圆心做 90° 圆周开合。
-   锚点盒 left:12/bottom:12 → 中心 x=34、距底 34（与历史 rail/展开底部按钮同位）；
-   臂以锚点中心(left:34/bottom:34)为 transform-origin，收起 -90°(朝上)、展开 0°(朝右)，
-   按钮中心位于臂局部 (var(--arm-r), 0)，纯 rotate 即得真圆轨迹 */
+/* 底部三键簇（收起/展开锚点 + 主题 + 设置）：锚点不动（left:22/bottom:12，44px 按钮在
+   88px 迷你条水平居中），主题/设置为两枚 44px 滑块，基准位=横排位（中心 x=86/138、bottom 中线 34）：
+   收起第一段向左滑拢到锚点列并淡出；竖列位在锚点列正上方（水平位移 42/94、列距 52/104），
+   宽度动画落定后从 (-x,0) 升到 (-x,-y) 即纯上升=从下到上依次展开；展开时竖直+水平滑回横排位 */
 .footerCluster {
   position: relative;
   width: 100%;
@@ -87,52 +97,107 @@
   transition: height var(--sidebar-anim);
 }
 
-.footerClusterAnim .footerArm,
-.footerClusterAnim .footerArmFace {
-  transition: transform var(--sidebar-anim);
+/* ---- 滑块四态取值：始终生效（启动回读/减少动效时直接落位，不依赖门控） ----
+   竖列固定位在锚点列正上方（水平位移 42/94，竖直列距 52/104），四态全部用 transform 表达 */
+/* 竖列固定位（收起落定态） */
+.footerRail .footerSlideNear {
+  transform: translate(-42px, -52px);
+  opacity: 1;
+}
+
+.footerRail .footerSlideFar {
+  transform: translate(-94px, -104px);
+  opacity: 1;
+}
+
+/* 收起第一段：从右往左滑到锚点列（left:22）并淡出 */
+.footerCollapsing .footerSlideNear {
+  transform: translateX(-42px);
+  opacity: 0;
+}
+
+.footerCollapsing .footerSlideFar {
+  transform: translateX(-94px);
+  opacity: 0;
+}
+
+/* 展开第一段：自竖列位原地下沉到锚点列并淡出（x 不变，纯竖直方向） */
+.footerExpandOut .footerSlideNear {
+  transform: translate(-42px, 0);
+  opacity: 0;
+}
+
+.footerExpandOut .footerSlideFar {
+  transform: translate(-94px, 0);
+  opacity: 0;
+}
+
+/* 展开第二段与稳态展开同值（=基准横排位），无需取值规则 */
+
+/* ---- 各态过渡：animReady 门控（启动回读那一步值变不播动画） ---- */
+/* 收起第二段：(-x,0)→(-x,-x) 纯上升+淡入；设置(远)延迟 90ms 形成从下到上 */
+.footerClusterAnim.footerRail .footerSlideNear {
+  transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.footerClusterAnim.footerRail .footerSlideFar {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1) 0.09s,
+    opacity 0.18s cubic-bezier(0.22, 0.61, 0.36, 1) 0.09s;
+}
+
+/* 收起第一段：transform 与宽度动画同源；opacity 延迟 80ms 再淡出，先让位移看清 */
+.footerClusterAnim.footerCollapsing .footerSlideNear {
+  transition: transform var(--sidebar-anim), opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1) 0.08s;
+}
+
+.footerClusterAnim.footerCollapsing .footerSlideFar {
+  transition: transform var(--sidebar-anim), opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1) 0.08s;
+}
+
+/* 展开第一段：设置(远/顶)先沉，主题(近)延迟 80ms 跟上=从上到下 */
+.footerClusterAnim.footerExpandOut .footerSlideNear {
+  transition: transform 0.16s cubic-bezier(0.4, 0, 0.2, 1) 0.08s, opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1) 0.08s;
+}
+
+.footerClusterAnim.footerExpandOut .footerSlideFar {
+  transition: transform 0.16s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 展开第二段：(-x,0)→(0,0) 从左往右滑入+淡入；设置(远)延迟 90ms */
+.footerClusterAnim.footerExpandIn .footerSlideNear {
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.footerClusterAnim.footerExpandIn .footerSlideFar {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) 0.09s,
+    opacity 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) 0.09s;
 }
 
 .footerAnchor {
   position: absolute;
-  left: 12px;
+  left: 22px;
   bottom: 12px;
 }
 
-.footerArm {
+/* 滑块容器：44px 定位壳，基准=横排位；过渡规则见上方 footerClusterAnim 系 */
+.footerSlideBtn {
   position: absolute;
-  left: 34px;
-  bottom: 34px;
-  width: 0;
-  height: 0;
-  transform: rotate(-90deg);
-  transform-origin: 0 0;
-}
-
-.footerArmRow {
-  transform: rotate(0deg);
-}
-
-.footerArmBtn {
-  position: absolute;
-  left: calc(var(--arm-r) - 22px);
-  top: -22px;
+  bottom: 12px;
   width: 44px;
   height: 44px;
-}
-
-/* 臂内内容反向自转：臂带按钮绕锚点旋转做圆周运动时，内容(图标/设置菜单)保持朝上。
-   臂 -90°(收起) ↔ 0°(展开)，面 +90°(收起) ↔ 0°(展开)，等时同缓动 → 内容全程不歪 */
-.footerArmFace {
-  width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transform: rotate(0deg);
 }
 
-.footerArmFaceRail {
-  transform: rotate(90deg);
+.footerSlideNear {
+  left: 64px;
+}
+
+.footerSlideFar {
+  left: 116px;
 }
 
 /* 三键统一质感：44px 圆角、subtle 底（复用原 railFooterBtn 语言） */

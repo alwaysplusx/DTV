@@ -51,6 +51,7 @@ DTV/
 
 - `src-tauri/rust-toolchain.toml` 固定为 **nightly**，附带 `rustfmt` + `clippy`。不要降级到 stable —— `deno_core` 0.288（用于斗鱼直播流 URL 解密与抖音签名运行的嵌入式 JS 运行时）依赖 nightly 特性。
 - `src-tauri/build.rs` 用 `prost-build` 编译 `src-tauri/src/platforms/douyin/danmu/douyin.proto`，生成 `src-tauri/src/platforms/douyin/danmu/gen/douyin.rs`，由 `gen/mod.rs` 的 `include!("douyin.rs")` 引入。**只改 `.proto` 然后重新构建，不要直接编辑 `gen/douyin.rs`**。
+- macOS 构建在链接期通过 `-platform_version` 把二进制记录的 sdk 抬到 26.0（见 `build.rs` 内注释）：macOS 26 (Tahoe) 只对 sdk>=26 的二进制启用新版窗口控件，否则主窗口红绿灯保持旧样式（更小、色更实）。用 `otool -l <binary> | grep -A4 LC_BUILD_VERSION` 可验证 sdk 字段；不要删这段链接参数。
 - 首次构建前需要的系统包：
   - **Windows**：`protoc`、Strawberry Perl、NASM（CI：`choco install protoc`；`choco install strawberryperl nasm -y`）。另外必须设置 `RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v0.93.1/rusty_v8_release_x86_64-pc-windows-msvc.lib.gz`，让 MSVC 能拿到预编译的 `rusty_v8` 静态库。
   - **macOS**：`brew install protobuf pkg-config nasm`。CI 会设置 `CARGO_PROFILE_RELEASE_LTO=false`，因为 Apple 的 `ld` 加载不了 Rust LTO bitcode —— 本地发布构建也要镜像这一项。
@@ -61,6 +62,7 @@ DTV/
 
 - `src-tauri/tauri.conf.json`：`beforeDevCommand: pnpm -C web dev`，`devUrl: http://localhost:2896`，`beforeBuildCommand: pnpm -C web build`，`frontendDist: ../web/out`。端口 `2896` 在 `web/package.json`（`dev`/`start`）里硬编码。
 - 默认窗口保持 `decorations: true`（macOS 红绿灯依赖此项）。Windows/Linux 构建把 `decorations` 改成 `false` 以无边框化 —— CI 用内联 PowerShell 在 `.github/workflows/build.yml`/`windows-build.yml` 中改写主配置；本地可直接用平台覆盖配置 `src-tauri/tauri.{windows,linux}.conf.json`（Tauri 会按平台自动选 overlay）。
+- macOS 交通灯位是**多处联动的几何契约**，改任何一处都要同步：新版灯组（sdk>=26 样式，见 build.rs 链接参数）宽 60pt、按钮 14pt、间距 23，AppKit 原生默认左缘 9pt（HIG 不给坐标，这是系统自动排布的事实标准）；应用取 `trafficLightPosition: x=14` = (88−60)/2，灯组 14..74 在折叠迷你条内左右对称各 14px，故 `--sidebar-collapsed-width: 88px`（= 2x + 60，改 x 必须同步改栏宽），底部三键簇竖列锚点 `left:22` 在 88px 内居中（滑块水平位移 42/94）；`FollowsRail.module.css` 的 `.railHeaderMac`（61px）兼做灯位与头像对齐：灯组 y=33 时纵向占 y24..38，且 61 + railScroll 上垫 12 = 折叠态首个头像顶 73，与展开态（followList 10 + 表头 46 + 间距 10 + 行边距 5 = 顶 73）同线；头像两态统一 44px、行距统一 56px（列表 44+2×5+gap 2，迷你条 44+gap 12），切换时各行头像零缩放零位移（`railScroll` **只能右垫 4px**：左缘对齐 20px 靠「左 0 + 右 4」把列中线压到 42，写成左右各 4 会让整列右移 2px、折叠瞬间头像重影）——改表头/上垫/行边距/头像尺寸/行距须同步；`legacy-global.css` 的 `.player-pin-pill`（置顶药丸，主窗口唯一置顶入口）`left:76` 紧跟灯组右缘 +2px，折叠态加 `player-pin-pill-hidden` 淡出（迷你条太窄会连成一串）。运行时挪灯不可行——tao 在每次 `drawRect` 都会按建窗时的 inset 重摆灯组，把外部改动弹回。
 - NSIS/WiX 安装包强制本地化为 `zh-CN` / `SimpChinese`。
 - 能力声明（`src-tauri/capabilities/default.json`）最小化：`core:default`、`opener:default`、`os:default`，外加少量窗口控制权限。**Web 端调用新的 Tauri API 前必须先在这里加权限**，否则 `invoke` 会被拒绝。
 
@@ -80,6 +82,7 @@ DTV/
 - 全局状态用 React Context，集中在 `web/src/state/`（`theme`、`follow`、`customCategories`、`playerUi`、`playerOverlay`）。
 - 日志：使用 `web/src/utils/logger.ts` 的 `logger`，不要直接 `console.*`；`debug` 在生产环境被屏蔽。
 - `web/next-env.d.ts` 由 Next 自动生成并被 `.gitignore` 忽略；首次 `pnpm -C web dev` 后才会出现。
+- 侧栏（`Sidebar.tsx`）的展开列表与折叠迷你条**两块面板常驻挂载**，折叠节拍（`railShown`）只切 `paneHidden`——不要改回条件渲染：卸载重挂会重建全部头像 `<img>` 并触发整列表进场动画，切换明显闪烁。**`paneHidden` 是硬切、没有 opacity/visibility 过渡**（曾用 180ms 交叉淡变，实测两块面板的位图在淡变中叠加，整列头像发白重影：对比度 46→35、约 150ms，就是收起/展开瞬间的“闪烁”）；硬切之所以看不出来，前提是两态头像逐像素对齐（见上条几何契约），残留差异只有第 7 格——未开播头像 ↔ 未开播计数按钮。`FollowsRail` 因此接收 `active` 并在隐藏时主动关闭 portal 到 body 的悬浮预览卡。（开合顿挫曾有 `web/src/utils/sidebarPerfProbe.ts` 探针，属临时工具。）
 
 ## 多屏功能
 

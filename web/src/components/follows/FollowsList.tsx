@@ -15,6 +15,7 @@ import { useMultiview } from "@/state/multiview/MultiviewProvider";
 import { MultiviewSlotPicker, type SlotPickerAnchor } from "@/components/player/multiview/MultiviewSlotPicker";
 import { useFollowRefresh } from "@/state/follow/FollowRefreshProvider";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "@/utils/logger";
 
 const DRAG_PREP_DELAY_MS = 150;
 const DRAG_MIN_PX = 8;
@@ -91,6 +92,20 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
   const allStreamers = follow.followedStreamers;
   const listItemsRef = useRef(listItems);
   const foldersRef = useRef(follow.folders);
+
+  // [TEMP-PERF-PROBE] 挂载耗时采样（诊断侧栏开合卡顿用，定位后移除）
+  const perfT0Ref = useRef<number | null>(null);
+  if (perfT0Ref.current === null) perfT0Ref.current = performance.now();
+  useLayoutEffect(() => {
+    const t0 = perfT0Ref.current ?? 0;
+    const commitMs = performance.now() - t0;
+    const nodes = listRef.current ? listRef.current.querySelectorAll("*").length : 0;
+    const rows = allStreamers.length;
+    requestAnimationFrame(() => {
+      logger.info(`[sidebar-perf] list-mounted rows=${rows} nodes=${nodes} commit=${commitMs.toFixed(1)}ms`);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     listItemsRef.current = listItems;

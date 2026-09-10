@@ -219,12 +219,14 @@
   z-index: 1;
 }
 
+/* 行内边距 5：行距 44+2×5+列表 gap 2 = 56px，与折叠迷你条头像节奏一致
+   （44+12=56），切换时各行头像零位移 */
 .streamerItem {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 8px;
+  padding: 5px 8px;
   border-radius: 14px;
   background: transparent;
   cursor: pointer;
@@ -246,17 +248,19 @@
 
 .avatarWrap {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* 44px 与折叠迷你条头像/底部按钮同尺寸：折叠↔展开切换时首个头像零缩放零位移
+   （两态顶部都在 71px，行距均为 56px，见 FollowsRail.module.css 的对齐链注释） */
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   overflow: hidden;
   flex-shrink: 0;
@@ -341,8 +345,8 @@
   position: absolute;
   bottom: -1px;
   right: -1px;
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border: 2px solid var(--sidebar-bg, var(--bg-primary));
 }
 
@@ -1216,7 +1220,7 @@
 
 /* 侧栏收起成迷你条时的昵称+标题整块折叠动画：左移淡出，时长与宽度动画同源 var(--sidebar-anim)。
    Sidebar 在收起那一刻(t0)就置 data-collapsed，文字因此与抽屉收窄同步、不滞后；
-   展开时列表整块重挂载、行自带 framer 入场动画，无需反向规则。
+   展开时反向淡入（列表常驻挂载、不重挂，行不加 framer 入场动画，故需这条反向规则）。
    仅作用于文字块(.meta)，头像列保持不动，折叠末段只剩头像列即与迷你条接管衔接 */
 .followList .meta {
   transition: opacity var(--sidebar-anim), transform var(--sidebar-anim);

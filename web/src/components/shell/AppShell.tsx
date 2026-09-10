@@ -21,6 +21,7 @@ import { PinIcon } from "@/components/player/PinIcon";
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
 import { FollowRefreshProvider } from "@/state/follow/FollowRefreshProvider";
 import { useFollow } from "@/state/follow/FollowProvider";
+import { probeSidebarToggle } from "@/utils/sidebarPerfProbe";
 
 type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom" | "follows";
 
@@ -120,6 +121,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [isPlayerFullscreen, isSidebarCollapsed]);
 
   const toggleSidebar = useCallback(() => {
+    // [TEMP-PERF-PROBE] 诊断侧栏开合卡顿用，定位后移除
+    probeSidebarToggle(isSidebarCollapsed ? "expand" : "collapse");
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
       try {
@@ -129,7 +132,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  }, []);
+  }, [isSidebarCollapsed]);
   const [optimisticPlatform, setOptimisticPlatform] = useState<UiPlatform>(activePlatform);
 
   const playerActive = isPlayerPath(normalizedPathname) || playerOverlay.isOpen;
@@ -239,12 +242,15 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       {/* macOS 交通灯旁常驻药丸：应用级窗口置顶，全视图常驻（不随 idle 隐藏）。
           portal 到 body + z-index:10001，与侧边栏把手同一模式，逃逸所有层叠上下文，
           稳居侧边栏(100)/播放覆盖层(500)/CSS 全屏播放器(9999) 之上。
-          hydrated gate 避免 SSR/客户端 portalTarget 不一致的 hydration mismatch。 */}
+          hydrated gate 避免 SSR/客户端 portalTarget 不一致的 hydration mismatch。
+          折叠态淡出（player-pin-pill-hidden）：迷你条只有 88px，药丸紧贴灯组右缘会连成一串。 */}
       {hydrated && portalTarget && !isWindows
         ? createPortal(
             <button
               type="button"
-              className={`player-pin-pill${isAlwaysOnTop ? " is-active" : ""}`}
+              className={`player-pin-pill${isAlwaysOnTop ? " is-active" : ""}${
+                isSidebarCollapsed ? " player-pin-pill-hidden" : ""
+              }`}
               data-tauri-drag-region="false"
               aria-label={isAlwaysOnTop ? "取消窗口置顶" : "窗口置顶"}
               aria-pressed={isAlwaysOnTop}

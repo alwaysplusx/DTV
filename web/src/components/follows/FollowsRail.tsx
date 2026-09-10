@@ -21,7 +21,7 @@ const HOVER_PREVIEW_DELAY_MS = 600;
 /** 头部(44) + 16:9 视频(162) + 边框，定位时用来垂直居中/夹取 */
 const PREVIEW_POPOVER_H = 210;
 
-export function FollowsRail() {
+export function FollowsRail({ active = true }: { active?: boolean }) {
   const follow = useFollow();
   const { ensureProxyStarted, getAvatarSrc } = useImageProxy();
   const playerOverlay = usePlayerOverlay();
@@ -68,6 +68,12 @@ export function FollowsRail() {
   }, [previewReset]);
 
   useEffect(() => () => closePreview(), [closePreview]);
+
+  // 面板常驻挂载：隐藏（切到展开列表）时不再走卸载 cleanup，需主动关闭 portal 到 body
+  // 的悬浮预览卡，否则会滞留在画面上
+  useEffect(() => {
+    if (!active) closePreview();
+  }, [active, closePreview]);
 
   // 头像移开后宽限 140ms，指针挪进预览卡（点喇叭开声）则保持打开
   const schedulePreviewClose = useCallback(() => {
@@ -275,7 +281,7 @@ export function FollowsRail() {
     const itemKey = `${s.platform}:${s.id}`;
     const isActive = activeStreamerKey === itemKey;
     const liveDotClass = s.liveStatus === "LIVE" ? listStyles.liveDotLive : s.liveStatus === "UNKNOWN" ? listStyles.liveDotUnknown : listStyles.liveDotOffline;
-    const avatarClass = `${listStyles.avatar}${isActive ? ` ${listStyles.avatarActive}` : ""} ${styles.railAvatar}`;
+    const avatarClass = `${listStyles.avatar}${isActive ? ` ${listStyles.avatarActive}` : ""}`;
     const avatarSrc = getAvatarSrc(s.platform, s.avatarUrl);
     return (
       <button
@@ -288,7 +294,7 @@ export function FollowsRail() {
         onMouseEnter={(e) => onAvatarMouseEnter(s, e.currentTarget)}
         onMouseLeave={() => onAvatarMouseLeave(s)}
       >
-        <span className={`${listStyles.avatarWrap} ${styles.railAvatarWrap}`}>
+        <span className={listStyles.avatarWrap}>
           <span className={avatarClass}>
             {avatarSrc ? (
               <img className={listStyles.avatarImg} src={avatarSrc} alt="" loading="lazy" decoding="async" draggable={false} />
@@ -296,7 +302,7 @@ export function FollowsRail() {
               <span className={listStyles.avatarFallback}>{(s.nickname || "?").slice(0, 1)}</span>
             )}
           </span>
-          <span className={`${listStyles.liveDot} ${listStyles.liveDotOnAvatar} ${liveDotClass} ${styles.railLiveDot}`} />
+          <span className={`${listStyles.liveDot} ${listStyles.liveDotOnAvatar} ${liveDotClass}`} />
         </span>
       </button>
     );
@@ -304,8 +310,9 @@ export function FollowsRail() {
 
   return (
     <div className={styles.railShell}>
-      {/* 迷你表头：顶部 Users 复用底部按钮质感（railFooterBtn），上下成同组 */}
-      <div className={styles.railHeader} data-tauri-drag-region title="关注列表">
+      {/* 迷你表头：顶部 Users 复用底部按钮质感（railFooterBtn），上下成同组；
+          macOS 此处为交通灯位（灯组宽 60pt、x=14，纵向占 y24..38），预留高度避免压到首个头像 */}
+      <div className={`${styles.railHeader}${isMac ? ` ${styles.railHeaderMac}` : ""}`} data-tauri-drag-region title="关注列表">
         {!isMac ? (
           <span className={`${styles.railHeaderIcon} ${styles.railFooterBtn}`} aria-hidden="true">
             <Users size={18} />

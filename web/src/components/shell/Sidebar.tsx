@@ -10,8 +10,10 @@ import { SettingsMenu } from "@/components/shell/SettingsMenu";
 import { useTheme } from "@/state/theme/ThemeProvider";
 
 // 收起时迷你条落定后再切换呈现：宽度动画时长须与 legacy-global 的 --sidebar-anim 同步
-// （比动画时长略短，宽度几乎到 68 时即切，避免展开态内容压到最窄后仍停留一瞬）
+// （比动画时长略短，宽度几乎到 88 时即切，避免展开态内容压到最窄后仍停留一瞬）
 const COLLAPSE_SWAP_MS = 250;
+// 展开：竖列按钮「从上往下收起」前段总时长（远钮 160ms + 近钮延迟 80ms），之后横排按钮从左往右滑入
+const EXPAND_IN_MS = 240;
 
 export function Sidebar({
   isCollapsed,
@@ -45,27 +47,45 @@ export function Sidebar({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 收起时的“迷你条呈现”比 isCollapsed 晚一拍：宽度动画先把展开面板裁到 68，再整块换成迷你条，
-  // 避免迷你条在仍宽的面板里居中漂移；展开则立即切回列表随宽度顺次露出
+  // 收起时的“迷你条呈现”比 isCollapsed 晚一拍：宽度动画先把展开面板裁到 88 再切到迷你条
+  // （两面板常驻挂载，此处只切可见性），避免迷你条在仍宽的面板里居中漂移；
+  // 展开则立即切回列表随宽度顺次露出
   const [railShown, setRailShown] = useState(isCollapsed);
+  // 展开侧的对称节拍：false=竖列按钮正在「从上往下收起」，落定后翻 true 触发横排「从左往右滑入」；
+  // 与稳态展开同值（横排位），故平时常驻 true 无副作用
+  const [footerExpandIn, setFooterExpandIn] = useState(true);
   const railTimerRef = useRef<number | null>(null);
+  const footerTimerRef = useRef<number | null>(null);
   const prevCollapsedRef = useRef(isCollapsed);
   useLayoutEffect(() => {
     if (railTimerRef.current) {
       window.clearTimeout(railTimerRef.current);
       railTimerRef.current = null;
     }
+    if (footerTimerRef.current) {
+      window.clearTimeout(footerTimerRef.current);
+      footerTimerRef.current = null;
+    }
     const becomingCollapsed = isCollapsed && !prevCollapsedRef.current;
+    const becomingExpanded = !isCollapsed && prevCollapsedRef.current;
     prevCollapsedRef.current = isCollapsed;
+    // 只有“宽度真会播放动画”才走节拍延迟：真全屏/启动回读/减少动效这些瞬移场景直接同步切，
+    // 避免以 88px 停留一帧展开态左缘
+    const reduce = typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
+    const willAnimate = animReadyRef.current && !reduce;
     if (!isCollapsed) {
       setRailShown(false);
+      if (becomingExpanded && willAnimate) {
+        footerTimerRef.current = window.setTimeout(() => {
+          footerTimerRef.current = null;
+          setFooterExpandIn(true);
+        }, EXPAND_IN_MS);
+      } else {
+        setFooterExpandIn(true);
+      }
       return;
     }
-    // 只有“收起时宽度真会播放动画”才延迟切迷你条：真全屏/启动回读/减少动效这些瞬移场景直接同步切，
-    // 避免以 68px 停留一帧展开态左缘
-    const reduce = typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
-    const willAnimate = becomingCollapsed && animReadyRef.current && !reduce;
-    if (willAnimate) {
+    if (willAnimate && becomingCollapsed) {
       railTimerRef.current = window.setTimeout(() => {
         railTimerRef.current = null;
         setRailShown(true);
@@ -73,11 +93,13 @@ export function Sidebar({
     } else {
       setRailShown(true);
     }
+    setFooterExpandIn(false);
   }, [isCollapsed, animReady]);
 
   useEffect(
     () => () => {
       if (railTimerRef.current) window.clearTimeout(railTimerRef.current);
+      if (footerTimerRef.current) window.clearTimeout(footerTimerRef.current);
     },
     []
   );
@@ -112,6 +134,15 @@ export function Sidebar({
 
   const { effectiveTheme, toggleLightDark } = useTheme();
   const isDark = effectiveTheme === "dark";
+
+  // 三键簇四态：收起=左滑淡出→(250ms)竖列上浮；展开=竖列下沉淡出→(240ms)横排左→右滑入
+  const footerPhase = isCollapsed
+    ? railShown
+      ? styles.footerRail
+      : styles.footerCollapsing
+    : footerExpandIn
+      ? styles.footerExpandIn
+      : styles.footerExpandOut;
 
   // 仅在播放时拉手微可见
   const subtle = isPlayerActive;
@@ -175,25 +206,24 @@ export function Sidebar({
           {isCollapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
         </button>
         <div className={styles.sidebarStage}>
-          {railShown ? (
-            <div className={styles.railPane}>
-              <FollowsRail />
-            </div>
-          ) : (
-            <div className={styles.listPane}>
-              <FollowsList folded={isCollapsed} />
-            </div>
-          )}
+          {/* 两块面板常驻挂载、railShown 节拍只切可见性：切换折叠不卸载重挂，
+              头像 <img> 不重建不闪（此前整块换挂是开合顿挫的主因） */}
+          <div className={`${styles.listPane}${railShown ? ` ${styles.paneHidden}` : ""}`}>
+            <FollowsList folded={isCollapsed} />
+          </div>
+          <div className={`${styles.railPane}${railShown ? "" : ` ${styles.paneHidden}`}`}>
+            <FollowsRail active={railShown} />
+          </div>
         </div>
 
-        {/* 底部三键簇：折叠/展开锚点固定，主题与设置以锚点中心为圆心做 90° 圆周开合。
-            竖列(收起)从上到下 设置→主题→折叠；横排(展开)从左到右 折叠→主题→设置，顺序两态一致。
-            几何跟 isCollapsed 走（收起一开始就同步转场，不滞后于宽度动画）；
-            仅迷你条与列表正文仍按 railShown 在宽度落定后切换 */}
+        {/* 底部三键簇：锚点固定不动；主题/设置两枚滑块四态全用 transform 表达——
+            收起：向左滑拢淡出 → 宽度落定后从下到上依次上浮进竖列；
+            展开：竖列从上到下依次下沉淡出 → 面板变宽 → 横排从左往右依次滑入。
+            滑块基准=横排位，竖列位在锚点列正上方（88px 迷你条水平居中） */}
         <div
           className={`${styles.footerCluster} ${isCollapsed ? styles.footerClusterRail : styles.footerClusterList} ${
             animReady ? styles.footerClusterAnim : ""
-          }`}
+          } ${footerPhase}`}
         >
           <button
             type="button"
@@ -204,33 +234,19 @@ export function Sidebar({
           >
             {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
-          <div
-            className={`${styles.footerArm} ${isCollapsed ? "" : styles.footerArmRow}`}
-            style={{ ["--arm-r" as any]: "52px" }}
-          >
-            <div className={styles.footerArmBtn}>
-              <div className={`${styles.footerArmFace} ${isCollapsed ? styles.footerArmFaceRail : ""}`}>
-                <button
-                  type="button"
-                  className={styles.footerClusterBtn}
-                  onClick={toggleLightDark}
-                  aria-label={isDark ? "切换到浅色" : "切换到深色"}
-                  title={isDark ? "切换到浅色" : "切换到深色"}
-                >
-                  {isDark ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-              </div>
-            </div>
+          <div className={`${styles.footerSlideBtn} ${styles.footerSlideNear}`}>
+            <button
+              type="button"
+              className={styles.footerClusterBtn}
+              onClick={toggleLightDark}
+              aria-label={isDark ? "切换到浅色" : "切换到深色"}
+              title={isDark ? "切换到浅色" : "切换到深色"}
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
-          <div
-            className={`${styles.footerArm} ${isCollapsed ? "" : styles.footerArmRow}`}
-            style={{ ["--arm-r" as any]: "104px" }}
-          >
-            <div className={styles.footerArmBtn}>
-              <div className={`${styles.footerArmFace} ${isCollapsed ? styles.footerArmFaceRail : ""}`}>
-                <SettingsMenu />
-              </div>
-            </div>
+          <div className={`${styles.footerSlideBtn} ${styles.footerSlideFar}`}>
+            <SettingsMenu />
           </div>
         </div>
       </aside>
