@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m, useMotionValue, useSpring } from "framer-motion";
-import { Check, ChevronDown, Folder, FolderPlus, ListCollapse, RotateCw, Users, X } from "lucide-react";
+import { Check, ChevronDown, Folder, FolderPlus, ListCollapse, Play, RotateCw, Users, VideoOff, X } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import styles from "./FollowsList.module.css";
@@ -23,6 +23,35 @@ const DRAG_MIN_PX = 8;
 export function normalizeFollowKey(key: string) {
   const [p, id] = String(key || "").split(":");
   return `${String(p || "").toUpperCase()}:${String(id || "")}`;
+}
+
+/** 头像右下角状态徽标：LIVE=绿底实心▶，OFFLINE=灰底摄像机关闭（形态区分），UNKNOWN=素圆点。
+ *  compact：30px 级小头像用（搜索弹窗等），不依赖本模块 .resultAvatar 后代选择器 */
+export function AvatarLiveBadge({ status, compact = false }: { status: FollowedStreamer["liveStatus"]; compact?: boolean }) {
+  if (status === "UNKNOWN") {
+    return <span className={`${styles.liveDot} ${styles.liveDotOnAvatar} ${styles.liveDotUnknown}`} aria-hidden="true" />;
+  }
+  const stateClass = status === "LIVE" ? styles.liveDotLive : styles.liveDotOffline;
+  return (
+    <span
+      className={[
+        styles.liveDot,
+        styles.liveDotOnAvatar,
+        styles.liveBadgeOnAvatar,
+        compact ? styles.liveBadgeCompact : "",
+        stateClass
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-hidden="true"
+    >
+      {status === "LIVE" ? (
+        <Play size={compact ? 7 : 9} fill="currentColor" strokeWidth={1} />
+      ) : (
+        <VideoOff size={compact ? 9 : 12} strokeWidth={2.6} />
+      )}
+    </span>
+  );
 }
 
 export function FollowsList({ folded = false }: { folded?: boolean }) {
@@ -549,7 +578,6 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
     itemKey: string,
     opts: { index: number; fromFolder?: boolean; sourceFolderId?: string | null; onEnter?: (el: HTMLElement) => void; onLeave?: () => void; isActive?: boolean }
   ) => {
-    const liveDotClass = s.liveStatus === "LIVE" ? styles.liveDotLive : s.liveStatus === "UNKNOWN" ? styles.liveDotUnknown : styles.liveDotOffline;
     const dragKey = `${s.platform}:${s.id}`;
     const avatarSrc = getAvatarSrc(s.platform, s.avatarUrl);
     const dragEnabled = opts.fromFolder || opts.index >= 0;
@@ -601,7 +629,7 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
                 <span className={styles.avatarFallback}>{(s.nickname || "?").slice(0, 1)}</span>
               )}
             </span>
-            <span className={`${styles.liveDot} ${styles.liveDotOnAvatar} ${liveDotClass}`} aria-hidden="true" />
+            <AvatarLiveBadge status={s.liveStatus} />
           </span>
           <div className={styles.meta}>
             <div className={nameClass} title={s.nickname}>
@@ -865,7 +893,6 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
                     <div className={styles.followOverlayGrid}>
                       {overlayItems.map((s) => {
                         const avatarSrc = getAvatarSrc(s.platform, s.avatarUrl);
-                        const liveDotClass = s.liveStatus === "LIVE" ? styles.liveDotLive : s.liveStatus === "UNKNOWN" ? styles.liveDotUnknown : styles.liveDotOffline;
                         const liveText = s.liveStatus === "LIVE" ? "直播中" : s.liveStatus === "OFFLINE" ? "离线" : "未知";
                         const roomTitle = s.roomTitle || "暂无直播标题";
                         const isActive = activeStreamerKey === `${s.platform}:${s.id}`;
@@ -905,7 +932,7 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
                               <div className={styles.resultAvatar}>
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 {avatarSrc ? <img className={styles.resultAvatarImg} src={avatarSrc} alt={s.nickname} /> : <div className={styles.resultAvatarFallback}>{(s.nickname || "?").slice(0, 1)}</div>}
-                                <span className={`${styles.liveDot} ${styles.liveDotOnAvatar} ${liveDotClass}`} aria-hidden="true" />
+                                <AvatarLiveBadge status={s.liveStatus} />
                               </div>
                               <div className={styles.resultMain}>
                                 <div className={styles.resultName} title={s.nickname}>

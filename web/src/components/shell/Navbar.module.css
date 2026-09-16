@@ -1070,24 +1070,6 @@
   text-overflow: ellipsis;
 }
 
-/* 头像右下角直播徽标（与关注栏 liveDotOnAvatar 同款）：溢出头像边缘一像素 */
-.liveDot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(134, 134, 139, 0.7);
-  border: 2px solid var(--bg-secondary);
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-
-.liveDotOn {
-  background: var(--accent);
-}
-
 /* 多入口时（独立窗/当前窗可同时打开），在结果项右侧加紧凑图标按钮 */
 .searchResultActions {
   display: inline-flex;

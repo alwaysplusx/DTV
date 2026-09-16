@@ -9,6 +9,7 @@ import styles from "@/components/shell/Navbar.module.css";
 import { searchAnchors, searchFiltered, SEARCH_PLATFORM_LABELS, type SearchAnchorResult, type SearchFilter, type SearchPlatform } from "@/services/search";
 import { PlatformIcon } from "@/components/common/PlatformIcon";
 import { useImageProxy } from "@/hooks/useImageProxy";
+import { AvatarLiveBadge } from "@/components/follows/FollowsList";
 import { useFollow, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
 
 /** spotlight 筛选：平台 chips + 本地「关注」tab（后者不走网络，本地过滤关注列表） */
@@ -412,7 +413,7 @@ export function useSearchSpotlight(opts: SearchSpotlightOptions) {
                         ) : (
                           <div className={styles.resultAvatarFallback}>{(anchor.userName || "?").slice(0, 1)}</div>
                         )}
-                        <span className={`${styles.liveDot} ${anchor.liveStatus ? styles.liveDotOn : ""}`} aria-hidden="true" />
+                        <AvatarLiveBadge status={anchor.liveStatus ? "LIVE" : "OFFLINE"} compact />
                       </div>
                       <div className={styles.resultMain}>
                         <div className={styles.resultName} title={anchor.userName}>
