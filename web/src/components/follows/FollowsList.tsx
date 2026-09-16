@@ -3,6 +3,20 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m, useMotionValue, useSpring } from "framer-motion";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
+  type DragStartEvent
+} from "@dnd-kit/core";
+import { arrayMove, rectSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Check, ChevronDown, Folder, FolderPlus, ListCollapse, Play, RotateCw, Users, VideoOff, X } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -15,15 +29,35 @@ import { useMultiview } from "@/state/multiview/MultiviewProvider";
 import { MultiviewSlotPicker, type SlotPickerAnchor } from "@/components/player/multiview/MultiviewSlotPicker";
 import { useFollowRefresh } from "@/state/follow/FollowRefreshProvider";
 import { invoke } from "@tauri-apps/api/core";
-import { logger } from "@/utils/logger";
-
-const DRAG_PREP_DELAY_MS = 150;
-const DRAG_MIN_PX = 8;
 
 export function normalizeFollowKey(key: string) {
   const [p, id] = String(key || "").split(":");
   return `${String(p || "").toUpperCase()}:${String(id || "")}`;
 }
+
+type DragData =
+  | { kind: "top-streamer"; key: string; platform: string; id: string }
+  | { kind: "top-folder"; folderId: string }
+  | { kind: "child-streamer"; key: string; sourceFolderId: string; platform: string; id: string };
+
+// 只与同 Kind 的条目做碰撞：顶层文件夹↔文件夹、主播↔主播；子行↔同文件夹的兄弟行。
+// over 变化驱动 SortableContext 的兄弟让位动画；跨文件夹投递去向仍由
+// elementFromPoint 的文件夹悬停检测决定，不走碰撞结果
+const sameKindClosestCenter: CollisionDetection = (args) => {
+  const data = args.active.data.current as DragData | undefined;
+  let containers = args.droppableContainers;
+  if (data && (data.kind === "top-streamer" || data.kind === "top-folder")) {
+    const kind = data.kind;
+    containers = containers.filter((c) => (c.data.current as DragData | undefined)?.kind === kind);
+  } else if (data?.kind === "child-streamer") {
+    const sourceFolderId = data.sourceFolderId;
+    containers = containers.filter((c) => {
+      const d = c.data.current as DragData | undefined;
+      return d?.kind === "child-streamer" && d.sourceFolderId === sourceFolderId;
+    });
+  }
+  return closestCenter({ ...args, droppableContainers: containers });
+};
 
 /** 头像右下角状态徽标：LIVE=绿底实心▶，OFFLINE=灰底摄像机关闭（形态区分），UNKNOWN=素圆点。
  *  compact：30px 级小头像用（搜索弹窗等），不依赖本模块 .resultAvatar 后代选择器 */
@@ -66,7 +100,6 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
   const [pickerAnchor, setPickerAnchor] = useState<SlotPickerAnchor | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
-  const streamersListRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const expandBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -121,20 +154,6 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
   const allStreamers = follow.followedStreamers;
   const listItemsRef = useRef(listItems);
   const foldersRef = useRef(follow.folders);
-
-  // [TEMP-PERF-PROBE] 挂载耗时采样（诊断侧栏开合卡顿用，定位后移除）
-  const perfT0Ref = useRef<number | null>(null);
-  if (perfT0Ref.current === null) perfT0Ref.current = performance.now();
-  useLayoutEffect(() => {
-    const t0 = perfT0Ref.current ?? 0;
-    const commitMs = performance.now() - t0;
-    const nodes = listRef.current ? listRef.current.querySelectorAll("*").length : 0;
-    const rows = allStreamers.length;
-    requestAnimationFrame(() => {
-      logger.info(`[sidebar-perf] list-mounted rows=${rows} nodes=${nodes} commit=${commitMs.toFixed(1)}ms`);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     listItemsRef.current = listItems;
@@ -274,130 +293,48 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
     setFolderNameModal({ open: false, mode: "create", folderId: null });
   }, [follow, folderNameInput, folderNameModal.folderId, folderNameModal.mode]);
 
-  const dragRef = useRef<{
-    isDragging: boolean;
-    draggedIndex: number;
-    draggedItemType: "folder" | "streamer" | null;
-    dragOverFolderId: string | null;
-    draggedStreamerKey: string | null;
-    draggedFromFolder: boolean;
-    sourceFolderId: string | null;
-    startX: number;
-    startY: number;
-  }>({
-    isDragging: false,
-    draggedIndex: -1,
-    draggedItemType: null,
-    dragOverFolderId: null,
-    draggedStreamerKey: null,
-    draggedFromFolder: false,
-    sourceFolderId: null,
-    startX: 0,
-    startY: 0
-  });
-
-  const pendingDragRef = useRef<{
-    active: boolean;
-    timer: number | null;
-    startX: number;
-    startY: number;
-    payload: null | { type: "folder" | "streamer"; index: number; streamerKey?: string; fromFolder?: boolean; sourceFolderId?: string | null };
-  }>({ active: false, timer: null, startX: 0, startY: 0, payload: null });
-
-  const [dragUi, setDragUi] = useState<{ isDragging: boolean; dragOverFolderId: string | null; draggedItemType: "folder" | "streamer" | null }>({ isDragging: false, dragOverFolderId: null, draggedItemType: null });
+  /* —— dnd-kit 拖拽状态（顶层排序 + 跨文件夹投递） —— */
+  const [activeDrag, setActiveDrag] = useState<DragData | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const activeDragRef = useRef<DragData | null>(null);
+  const dragOverFolderIdRef = useRef<string | null>(null);
+  const orderChangedRef = useRef(false);
   const didDragRef = useRef(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  const resetDragUi = useCallback(() => {
-    dragRef.current = {
-      isDragging: false,
-      draggedIndex: -1,
-      draggedItemType: null,
-      dragOverFolderId: null,
-      draggedStreamerKey: null,
-      draggedFromFolder: false,
-      sourceFolderId: null,
-      startX: 0,
-      startY: 0
-    };
-    setDragUi({ isDragging: false, dragOverFolderId: null, draggedItemType: null });
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleDragMove as any);
-    document.removeEventListener("mouseup", handleDragUp as any);
-  }, []);
-
-  const cancelPendingDrag = useCallback(() => {
-    const p = pendingDragRef.current;
-    if (!p.active) return;
-    if (p.timer !== null) window.clearTimeout(p.timer);
-    pendingDragRef.current = { active: false, timer: null, startX: 0, startY: 0, payload: null };
-    document.removeEventListener("mousemove", handlePrepMove as any);
-    document.removeEventListener("mouseup", handlePrepUp as any);
-  }, []);
-
-  // handlers need hoisting for reset/cancel above
-  function beginDrag(payload: { type: "folder" | "streamer"; index: number; streamerKey?: string; fromFolder?: boolean; sourceFolderId?: string | null }, startX: number, startY: number) {
-    cancelPendingDrag();
-    if (dragRef.current.isDragging) {
-      follow.rollbackTransaction();
-      resetDragUi();
-    }
-
-    follow.beginTransaction();
-    dragRef.current.isDragging = true;
-    dragRef.current.draggedItemType = payload.type;
-    dragRef.current.draggedIndex = payload.fromFolder ? -1 : payload.index;
-    dragRef.current.draggedStreamerKey = payload.streamerKey ?? null;
-    dragRef.current.draggedFromFolder = !!payload.fromFolder;
-    dragRef.current.sourceFolderId = payload.sourceFolderId ?? null;
-    dragRef.current.dragOverFolderId = null;
-    dragRef.current.startX = startX;
-    dragRef.current.startY = startY;
-
-    document.body.style.userSelect = "none";
-    setDragUi({ isDragging: true, dragOverFolderId: null, draggedItemType: payload.type });
-    document.addEventListener("mousemove", handleDragMove as any);
-    document.addEventListener("mouseup", handleDragUp as any);
-  }
-
-  function handlePrepMove(e: MouseEvent) {
-    const p = pendingDragRef.current;
-    if (!p.active || !p.payload) return;
-    const dist = Math.hypot(e.clientX - p.startX, e.clientY - p.startY);
-    if (dist >= DRAG_MIN_PX) {
-      beginDrag(p.payload, p.startX, p.startY);
-      didDragRef.current = true;
-    }
-  }
-
-  function handlePrepUp() {
-    cancelPendingDrag();
-  }
-
-  const prepareDrag = useCallback(
-    (payload: { type: "folder" | "streamer"; index: number; streamerKey?: string; fromFolder?: boolean; sourceFolderId?: string | null }, e: React.MouseEvent) => {
-      if (e.button !== 0) return;
-      if (folderMenu.open) setFolderMenu((m) => ({ ...m, open: false }));
-      if (folderNameModal.open) return;
-
-      cancelPendingDrag();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      pendingDragRef.current = { active: true, timer: null, startX, startY, payload };
-      pendingDragRef.current.timer = window.setTimeout(() => {
-        if (!pendingDragRef.current.active || !pendingDragRef.current.payload) return;
-        beginDrag(pendingDragRef.current.payload, startX, startY);
-        didDragRef.current = true;
-      }, DRAG_PREP_DELAY_MS);
-
-      document.addEventListener("mousemove", handlePrepMove as any);
-      document.addEventListener("mouseup", handlePrepUp as any);
-    },
-    [cancelPendingDrag, folderMenu.open, folderNameModal.open, resetDragUi, follow]
+  const topItemIds = useMemo(
+    () => listItems.map((item) => (item.type === "folder" ? `f:${item.data.id}` : `s:${item.data.platform}:${item.data.id}`)),
+    [listItems]
   );
+
+  // 窗口失焦/隐藏时无法收到 pointerup：结清事务，防止悬挂的半次拖拽
+  useEffect(() => {
+    const abort = () => {
+      if (!activeDragRef.current) return;
+      if (orderChangedRef.current) follow.commitTransaction();
+      else follow.rollbackTransaction();
+      activeDragRef.current = null;
+      dragOverFolderIdRef.current = null;
+      orderChangedRef.current = false;
+      setActiveDrag(null);
+      setDragOverFolderId(null);
+      document.body.style.userSelect = "";
+    };
+    const onBlur = () => abort();
+    const onVis = () => {
+      if (document.hidden) abort();
+    };
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [follow]);
 
   const handleStreamerClick = useCallback(
     (platform: FollowPlatform, id: string, sourceEl?: HTMLElement | null) => {
-      if (dragRef.current.isDragging || pendingDragRef.current.active || didDragRef.current) return;
+      if (didDragRef.current) return;
       if (multiview.isMultiview) {
         const rect = sourceEl?.getBoundingClientRect();
         if (!rect) return;
@@ -447,219 +384,183 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
     return p;
   }, []);
 
-  function handleDragMove(e: MouseEvent) {
-    const d = dragRef.current;
-    if (!d.isDragging || !d.draggedItemType) return;
-
-    // streamer: hover folder detection
-    if (d.draggedItemType === "streamer" && d.draggedStreamerKey) {
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+  // 文件夹悬停检测：elementFromPoint 命中指针下方元素（被拖行 pointer-events:none 穿透）
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      const data = event.active.data.current as DragData | undefined;
+      if (data?.kind !== "top-streamer" && data?.kind !== "child-streamer") return;
+      const activator = event.activatorEvent as PointerEvent;
+      const px = activator.clientX + event.delta.x;
+      const py = activator.clientY + event.delta.y;
+      const el = document.elementFromPoint(px, py) as HTMLElement | null;
       const folderEl = el?.closest("[data-folder-id]") as HTMLElement | null;
       const folderId = folderEl?.getAttribute("data-folder-id") || null;
-      if (folderId) {
-        const folder = foldersRef.current.find((f) => f.id === folderId) || null;
-        const exists = folder ? folder.streamerIds.some((x) => normalizeFollowKey(x) === normalizeFollowKey(d.draggedStreamerKey as string)) : false;
-        if (folder && !exists) {
-          d.dragOverFolderId = folderId;
-          setDragUi((u) => ({ ...u, dragOverFolderId: folderId }));
+      const exists = folderId
+        ? (foldersRef.current.find((f) => f.id === folderId)?.streamerIds.some((x) => normalizeFollowKey(x) === normalizeFollowKey(data.key)) ?? false)
+        : false;
+      const next = folderId && !exists ? folderId : null;
+      if (next !== dragOverFolderIdRef.current) {
+        dragOverFolderIdRef.current = next;
+        setDragOverFolderId(next);
+      }
+    },
+    []
+  );
+
+  // 顶层同 Kind 实时重排：文件夹只与文件夹换位、主播只与主播换位，天然防止主播越过文件夹
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const aData = event.active.data.current as DragData | undefined;
+      if (aData?.kind !== "top-streamer" && aData?.kind !== "top-folder") return;
+      if (!event.over || event.over.id === event.active.id) return;
+      const oData = event.over.data.current as DragData | undefined;
+      if (oData?.kind !== aData.kind) return;
+      const idOf = (it: FollowListItem) => (it.type === "folder" ? `f:${it.data.id}` : `s:${it.data.platform}:${it.data.id}`);
+      const oldIndex = listItemsRef.current.findIndex((it) => idOf(it) === event.active.id);
+      const newIndex = listItemsRef.current.findIndex((it) => idOf(it) === event.over!.id);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+      follow.updateListOrder(arrayMove(listItemsRef.current, oldIndex, newIndex));
+      orderChangedRef.current = true;
+    },
+    [follow]
+  );
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      follow.beginTransaction();
+      const data = event.active.data.current as DragData | undefined;
+      activeDragRef.current = data ?? null;
+      orderChangedRef.current = false;
+      dragOverFolderIdRef.current = null;
+      setActiveDrag(data ?? null);
+      setDragOverFolderId(null);
+      document.body.style.userSelect = "none";
+    },
+    [follow]
+  );
+
+  const finishDrag = useCallback(
+    (committed: boolean) => {
+      if (committed) follow.commitTransaction();
+      else follow.rollbackTransaction();
+      activeDragRef.current = null;
+      dragOverFolderIdRef.current = null;
+      orderChangedRef.current = false;
+      setActiveDrag(null);
+      setDragOverFolderId(null);
+      document.body.style.userSelect = "";
+      didDragRef.current = true;
+      window.setTimeout(() => {
+        didDragRef.current = false;
+      }, 0);
+    },
+    [follow]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const data = event.active.data.current as DragData | undefined;
+      const activator = event.activatorEvent as PointerEvent;
+      const px = activator.clientX + event.delta.x;
+      const py = activator.clientY + event.delta.y;
+      if (data?.kind === "child-streamer") {
+        // 松手位置仍在源文件夹内 → 回滚（微移不代表要移出）
+        const srcEl = document.querySelector(`[data-folder-id="${data.sourceFolderId}"]`) as HTMLElement | null;
+        const r = srcEl?.getBoundingClientRect();
+        const insideSource = !!r && px >= r.left && px <= r.right && py >= r.top && py <= r.bottom;
+        if (insideSource) {
+          finishDrag(false);
           return;
         }
-      }
-      if (d.dragOverFolderId) {
-        d.dragOverFolderId = null;
-        setDragUi((u) => ({ ...u, dragOverFolderId: null }));
-      }
-    }
-
-    // reorder only for top-level drags
-    if (d.draggedIndex < 0) return;
-    const root = streamersListRef.current;
-    if (!root) return;
-    const children = Array.from(root.children) as HTMLElement[];
-    if (children.length === 0) return;
-    const currentOrder = listItemsRef.current;
-    if (d.draggedIndex >= currentOrder.length) return;
-
-    const folderCount = currentOrder.reduce((acc, item) => (item.type === "folder" ? acc + 1 : acc), 0);
-
-    const cursorY = e.clientY;
-    let targetIndex = 0;
-    for (let i = 0; i < children.length; i++) {
-      const rect = children[i].getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
-      if (cursorY > mid) targetIndex = i + 1;
-    }
-    targetIndex = Math.max(0, Math.min(currentOrder.length - 1, targetIndex));
-    if (targetIndex === d.draggedIndex) return;
-
-    if (d.draggedItemType === "folder") {
-      targetIndex = Math.max(0, Math.min(Math.max(0, folderCount - 1), targetIndex));
-    } else if (d.draggedItemType === "streamer") {
-      // streamers never go above folders
-      targetIndex = Math.max(folderCount, targetIndex);
-      targetIndex = Math.min(currentOrder.length - 1, targetIndex);
-    }
-    if (targetIndex === d.draggedIndex) return;
-
-    const targetItem = currentOrder[targetIndex];
-    if (d.draggedItemType === "streamer" && targetItem?.type === "folder" && targetItem.data.expanded !== false) {
-      d.dragOverFolderId = targetItem.data.id;
-      setDragUi((u) => ({ ...u, dragOverFolderId: targetItem.data.id }));
-      return;
-    }
-
-    const next = [...currentOrder];
-    const [removed] = next.splice(d.draggedIndex, 1);
-    next.splice(targetIndex, 0, removed);
-    follow.updateListOrder(next);
-    d.draggedIndex = targetIndex;
-  }
-
-  function handleDragUp(ev: MouseEvent) {
-    const d = dragRef.current;
-    if (!d.isDragging || !d.draggedItemType) {
-      resetDragUi();
-      return;
-    }
-
-    cancelPendingDrag();
-
-    const movedDist = Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY);
-
-    if (d.draggedItemType === "streamer" && d.draggedStreamerKey && d.dragOverFolderId) {
-      follow.moveStreamerToFolder(d.draggedStreamerKey, d.dragOverFolderId);
-      follow.commitTransaction();
-    } else if (d.draggedItemType === "streamer" && d.draggedFromFolder) {
-      let isStillInsideSource = false;
-      if (d.sourceFolderId) {
-        const sourceEl = document.querySelector(`[data-folder-id="${d.sourceFolderId}"]`) as HTMLElement | null;
-        const rect = sourceEl?.getBoundingClientRect();
-        if (rect) {
-          isStillInsideSource = ev.clientX >= rect.left && ev.clientX <= rect.right && ev.clientY >= rect.top && ev.clientY <= rect.bottom;
+        if (dragOverFolderIdRef.current && dragOverFolderIdRef.current !== data.sourceFolderId) {
+          follow.moveStreamerToFolder(data.key, dragOverFolderIdRef.current);
+          finishDrag(true);
+          return;
         }
+        // 移出到顶层
+        follow.removeStreamerFromFolderByKey(data.key, data.sourceFolderId);
+        finishDrag(true);
+        return;
       }
-      if (d.sourceFolderId && movedDist >= DRAG_MIN_PX && !isStillInsideSource) {
-        follow.removeStreamerFromFolderByKey(d.draggedStreamerKey || "", d.sourceFolderId);
-        follow.commitTransaction();
-      } else {
-        follow.rollbackTransaction();
+      if (data?.kind === "top-streamer" && dragOverFolderIdRef.current) {
+        // 顶层主播投递进文件夹（悬停高亮来自 onDragMove 的 elementFromPoint 检测）
+        follow.moveStreamerToFolder(data.key, dragOverFolderIdRef.current);
+        finishDrag(true);
+        return;
       }
-    } else {
-      if (movedDist < DRAG_MIN_PX) follow.rollbackTransaction();
-      else follow.commitTransaction();
-    }
+      finishDrag(orderChangedRef.current);
+    },
+    [finishDrag, follow]
+  );
 
-    resetDragUi();
-    didDragRef.current = true;
-    window.setTimeout(() => {
-      didDragRef.current = false;
-    }, 0);
-  }
+  const handleDragCancel = useCallback(() => finishDrag(false), [finishDrag]);
 
-  useEffect(() => {
-    const onBlur = () => {
-      if (!dragRef.current.isDragging) return;
-      follow.rollbackTransaction();
-      resetDragUi();
-    };
-    const onVis = () => {
-      if (document.hidden) onBlur();
-    };
-    window.addEventListener("blur", onBlur);
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.removeEventListener("blur", onBlur);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [follow, resetDragUi]);
-
-  const renderStreamerRow = (
+  // 行的视觉主体（不含拖拽 wrapper）：ref/listeners 由 TopSortableRow / ChildSortableRow 注入
+  const renderStreamerBody = (
     s: FollowedStreamer,
     itemKey: string,
-    opts: { index: number; fromFolder?: boolean; sourceFolderId?: string | null; onEnter?: (el: HTMLElement) => void; onLeave?: () => void; isActive?: boolean }
+    opts: { fromFolder?: boolean; isActive?: boolean; isDragging?: boolean; onEnter?: (el: HTMLElement) => void; onLeave?: () => void }
   ) => {
     const dragKey = `${s.platform}:${s.id}`;
     const avatarSrc = getAvatarSrc(s.platform, s.avatarUrl);
-    const dragEnabled = opts.fromFolder || opts.index >= 0;
     const inFolder = !!opts.fromFolder;
     const isActive = !!opts.isActive;
     const isLive = s.liveStatus === "LIVE";
-    const itemClass = `${styles.streamerItem}${inFolder ? ` ${styles.streamerItemInFolder}` : ""}${isActive ? ` ${styles.streamerItemActive}` : ""}`;
+    const itemClass = `${styles.streamerItem}${inFolder ? ` ${styles.streamerItemInFolder}` : ""}${isActive ? ` ${styles.streamerItemActive}` : ""}${opts.isDragging ? ` ${styles.streamerItemDragging}` : ""}`;
     const avatarClass = `${styles.avatar}${isActive ? ` ${styles.avatarActive}` : ""}`;
     const nameClass = `${styles.name}${isLive ? ` ${styles.nameLive}` : ""}`;
     return (
-      <m.div
-        key={itemKey}
-        className={styles.listItemWrapper}
-        layout
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: "auto" }}
-        exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } }}
-        transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
-        onMouseEnter={inFolder ? (e) => opts.onEnter?.(e.currentTarget) : (e) => onItemEnter(e.currentTarget)}
-        onMouseLeave={inFolder ? () => opts.onLeave?.() : undefined}
-        onMouseDown={
-          dragEnabled
-            ? (e) =>
-                prepareDrag(
-                  { type: "streamer", index: opts.index, streamerKey: dragKey, fromFolder: !!opts.fromFolder, sourceFolderId: opts.sourceFolderId ?? null },
-                  e
-                )
-            : undefined
-        }
+      <div
+        className={itemClass}
+        role="button"
+        tabIndex={0}
+        data-active={isActive ? "true" : undefined}
+        aria-current={isActive ? "true" : undefined}
+        onClick={(e) => handleStreamerClick(s.platform, s.id, e.currentTarget)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setStreamerMenu({ open: true, x: e.clientX, y: e.clientY, streamerKey: dragKey });
+        }}
       >
-        <div
-          className={itemClass}
-          role="button"
-          tabIndex={0}
-          data-active={isActive ? "true" : undefined}
-          aria-current={isActive ? "true" : undefined}
-          onClick={(e) => handleStreamerClick(s.platform, s.id, e.currentTarget)}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setStreamerMenu({ open: true, x: e.clientX, y: e.clientY, streamerKey: dragKey });
-          }}
-        >
-          <span className={styles.avatarWrap} aria-hidden="true">
-            <span className={avatarClass}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {avatarSrc ? (
-                <img className={styles.avatarImg} src={avatarSrc} alt={s.nickname} loading="lazy" decoding="async" draggable={false} />
-              ) : (
-                <span className={styles.avatarFallback}>{(s.nickname || "?").slice(0, 1)}</span>
-              )}
-            </span>
-            <AvatarLiveBadge status={s.liveStatus} />
+        <span className={styles.avatarWrap} aria-hidden="true">
+          <span className={avatarClass}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {avatarSrc ? (
+              <img className={styles.avatarImg} src={avatarSrc} alt={s.nickname} loading="lazy" decoding="async" draggable={false} />
+            ) : (
+              <span className={styles.avatarFallback}>{(s.nickname || "?").slice(0, 1)}</span>
+            )}
           </span>
-          <div className={styles.meta}>
-            <div className={nameClass} title={s.nickname}>
-              {s.nickname}
-            </div>
-            <div className={styles.sub} title={s.roomTitle || ""}>
-              {s.roomTitle || "暂无直播标题"}
-            </div>
+          <AvatarLiveBadge status={s.liveStatus} />
+        </span>
+        <div className={styles.meta}>
+          <div className={nameClass} title={s.nickname}>
+            {s.nickname}
           </div>
-          {!dragUi.isDragging ? (
-            <button
-              type="button"
-              data-slot="button"
-              className={`${styles.itemRemoveBtn}${confirmUnfollowKey === itemKey ? ` ${styles.itemRemoveBtnConfirm}` : ""}`}
-              title={confirmUnfollowKey === itemKey ? "再次点击确认取消关注" : "取消关注"}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                requestUnfollow(itemKey, s.platform, s.id);
-              }}
-            >
-              {confirmUnfollowKey === itemKey ? (
-                <span className={styles.itemRemoveBtnLabel}>确认</span>
-              ) : (
-                <X size={12} strokeWidth={2.5} />
-              )}
-            </button>
-          ) : null}
+          <div className={styles.sub} title={s.roomTitle || ""}>
+            {s.roomTitle || "暂无直播标题"}
+          </div>
         </div>
-      </m.div>
+        {!activeDrag ? (
+          <button
+            type="button"
+            data-slot="button"
+            className={`${styles.itemRemoveBtn}${confirmUnfollowKey === itemKey ? ` ${styles.itemRemoveBtnConfirm}` : ""}`}
+            title={confirmUnfollowKey === itemKey ? "再次点击确认取消关注" : "取消关注"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              requestUnfollow(itemKey, s.platform, s.id);
+            }}
+          >
+            {confirmUnfollowKey === itemKey ? (
+              <span className={styles.itemRemoveBtnLabel}>确认</span>
+            ) : (
+              <X size={12} strokeWidth={2.5} />
+            )}
+          </button>
+        ) : null}
+      </div>
     );
   };
 
@@ -734,84 +635,125 @@ export function FollowsList({ folded = false }: { folded?: boolean }) {
           style={{ opacity: hoverOpacity, y: hoverY, height: hoverH }}
         />
 
-        <div className={`${styles.streamersList} ${dragUi.isDragging ? styles.draggingList : ""}`} ref={streamersListRef}>
+        <div className={`${styles.streamersList} ${activeDrag ? styles.draggingList : ""}`}>
           {listItems.length === 0 ? (
             <div style={{ padding: 18, color: "var(--secondary-text)", fontWeight: 800, textAlign: "center" }}>
               暂无关注主播
             </div>
           ) : (
-            <AnimatePresence initial={false}>
-              {listItems.map((item, index) => {
-                if (item.type === "streamer") {
-                  const key = `${item.data.platform}:${item.data.id}`;
-                  const latest = streamerByKey.get(key) ?? item.data;
-                  return renderStreamerRow(latest, key, { index, isActive: activeStreamerKey === key });
-                }
+            <DndContext
+              sensors={sensors}
+              collisionDetection={sameKindClosestCenter}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext items={topItemIds} strategy={rectSortingStrategy}>
+                <AnimatePresence initial={false}>
+                  {listItems.map((item) => {
+                    if (item.type === "streamer") {
+                      const key = `${item.data.platform}:${item.data.id}`;
+                      const latest = streamerByKey.get(key) ?? item.data;
+                      return (
+                        <TopSortableRow key={key} id={`s:${key}`} data={{ kind: "top-streamer", key, platform: item.data.platform, id: item.data.id }}>
+                          {(api) =>
+                            renderStreamerBody(latest, key, { isActive: activeStreamerKey === key, isDragging: api.isDragging })
+                          }
+                        </TopSortableRow>
+                      );
+                    }
 
-                const folder = item.data;
-                const expanded = folder.expanded !== false;
-                const counts = folderCounts(folder.streamerIds);
-                return (
-                  <div
-                    key={`folder_${folder.id}`}
-                    className={`${styles.folderItem} ${expanded ? styles.folderItemExpanded : ""} ${
-                      dragUi.dragOverFolderId === folder.id ? styles.folderItemDragOver : ""
-                    }`}
-                    onMouseEnter={() => clearHoverHighlight()}
-                    data-folder-id={folder.id}
-                    onMouseDown={(e) => prepareDrag({ type: "folder", index }, e)}
-                  >
-                    <div
-                      className={styles.folderHeader}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        if (dragRef.current.isDragging || pendingDragRef.current.active || didDragRef.current) return;
-                        follow.toggleFolderExpanded(folder.id);
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setFolderMenu({ open: true, x: e.clientX, y: e.clientY, folderId: folder.id });
-                      }}
-                    >
-                      <Folder size={16} className={`${styles.folderIcon} ${expanded ? styles.folderIconExpanded : ""}`} />
-                      <span className={styles.folderName} title={folder.name}>
-                        {folder.name}
-                      </span>
-                      <span className={styles.folderCount}>
-                        {counts.online}/{counts.total}
-                      </span>
-                      <m.span
-                        className={styles.expandIcon}
-                        animate={{ rotate: expanded ? 180 : 0 }}
-                        transition={{ duration: 0.2, ease: [0.25, 0.8, 0.4, 1] }}
-                        aria-hidden="true"
+                    const folder = item.data;
+                    const expanded = folder.expanded !== false;
+                    const counts = folderCounts(folder.streamerIds);
+                    const childDraggingThis = activeDrag?.kind === "child-streamer" && activeDrag.sourceFolderId === folder.id;
+                    return (
+                      <FolderSortable
+                        key={`folder_${folder.id}`}
+                        folderId={folder.id}
+                        expanded={expanded}
+                        dragOver={dragOverFolderId === folder.id}
+                        childDragging={childDraggingThis}
+                        onHeaderClick={() => {
+                          if (didDragRef.current) return;
+                          follow.toggleFolderExpanded(folder.id);
+                        }}
+                        onHeaderContextMenu={(e) => {
+                          e.preventDefault();
+                          setFolderMenu({ open: true, x: e.clientX, y: e.clientY, folderId: folder.id });
+                        }}
+                        clearHoverHighlight={clearHoverHighlight}
+                        header={
+                          <>
+                            <Folder size={16} className={`${styles.folderIcon} ${expanded ? styles.folderIconExpanded : ""}`} />
+                            <span className={styles.folderName} title={folder.name}>
+                              {folder.name}
+                            </span>
+                            <span className={styles.folderCount}>
+                              {counts.online}/{counts.total}
+                            </span>
+                            <m.span
+                              className={styles.expandIcon}
+                              animate={{ rotate: expanded ? 180 : 0 }}
+                              transition={{ duration: 0.2, ease: [0.25, 0.8, 0.4, 1] }}
+                              aria-hidden="true"
+                            >
+                              <ChevronDown size={12} />
+                            </m.span>
+                          </>
+                        }
                       >
-                        <ChevronDown size={12} />
-                      </m.span>
-                    </div>
-
-                    <FolderChildren
-                      expanded={expanded}
-                      folderId={folder.id}
-                      streamerKeys={folder.streamerIds}
-                      normalizeKey={normalizeFollowKey}
-                      streamerByKey={streamerByKey}
-                      render={(s, itemKey, handlers) =>
-                        renderStreamerRow(s, itemKey, {
-                          index: -1,
-                          fromFolder: true,
-                          sourceFolderId: folder.id,
-                          onEnter: handlers.onEnter,
-                          onLeave: handlers.onLeave,
-                          isActive: activeStreamerKey === `${s.platform}:${s.id}`
-                        })
-                      }
-                    />
-                  </div>
-                );
-              })}
-            </AnimatePresence>
+                        <SortableContext
+                          items={[...folder.streamerIds]
+                            .sort((a, b) => {
+                              const sa = streamerByKey.get(normalizeFollowKey(a));
+                              const sb = streamerByKey.get(normalizeFollowKey(b));
+                              return (sa?.liveStatus === "LIVE" ? 0 : 1) - (sb?.liveStatus === "LIVE" ? 0 : 1);
+                            })
+                            .map((k) => `c:${folder.id}:${k}`)}
+                          strategy={rectSortingStrategy}
+                        >
+                          <FolderChildren
+                            expanded={expanded}
+                            folderId={folder.id}
+                            streamerKeys={folder.streamerIds}
+                            normalizeKey={normalizeFollowKey}
+                            streamerByKey={streamerByKey}
+                            overflowVisible={childDraggingThis}
+                            render={(s, itemKey, handlers) => {
+                              const cKey = `${s.platform}:${s.id}`;
+                              return (
+                                <ChildSortableRow
+                                  key={itemKey}
+                                  id={`c:${folder.id}:${cKey}`}
+                                  data={{ kind: "child-streamer", key: cKey, sourceFolderId: folder.id, platform: s.platform, id: s.id }}
+                                  motionProps={{
+                                    onMouseEnter: (e) => handlers.onEnter(e.currentTarget),
+                                    onMouseLeave: () => handlers.onLeave()
+                                  }}
+                                >
+                                  {(api) =>
+                                    renderStreamerBody(s, itemKey, {
+                                      fromFolder: true,
+                                      isActive: activeStreamerKey === cKey,
+                                      isDragging: api.isDragging,
+                                      onEnter: handlers.onEnter,
+                                      onLeave: handlers.onLeave
+                                    })
+                                  }
+                                </ChildSortableRow>
+                              );
+                            }}
+                          />
+                        </SortableContext>
+                      </FolderSortable>
+                    );
+                  })}
+                </AnimatePresence>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>
@@ -1172,6 +1114,7 @@ function FolderChildren({
   streamerKeys,
   normalizeKey,
   streamerByKey,
+  overflowVisible = false,
   render
 }: {
   expanded: boolean;
@@ -1179,6 +1122,8 @@ function FolderChildren({
   streamerKeys: string[];
   normalizeKey: (key: string) => string;
   streamerByKey: Map<string, FollowedStreamer>;
+  /** 源文件夹子行被拖出时放开裁剪，让头像能跟手拖出卡片（平时保持 hidden 供展开/收起动画裁剪） */
+  overflowVisible?: boolean;
   render: (s: FollowedStreamer, itemKey: string, handlers: { onEnter: (el: HTMLElement) => void; onLeave: () => void }) => React.ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -1251,7 +1196,7 @@ function FolderChildren({
           animate={{ height, opacity: 1 }}
           exit={{ height: 0, opacity: 0, transition: { type: "tween", duration: 0.24, ease: [0.64, 0, 0.78, 0.39] } }}
           transition={{ type: "tween", duration: 0.24, ease: [0.22, 0.61, 0.36, 1] }}
-          style={{ overflow: "hidden" }}
+          style={{ overflow: overflowVisible ? "visible" : "hidden" }}
           onMouseLeave={onLeave}
         >
           <m.div
@@ -1270,5 +1215,117 @@ function FolderChildren({
         </m.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+/* —— dnd-kit 包装组件 ——
+
+   顶层行（主播/文件夹）与文件夹子行都走 useSortable：拖拽中的行跟随鼠标、
+   兄弟行让位动画由库内 transform + transition 完成。子行仅在所属文件夹内排序；
+   跨文件夹投递（悬停高亮 + 松手落位）由 onDragMove 的 elementFromPoint 检测 +
+   onDragEnd 的源文件夹矩形判定决定。拖拽中的行必须 pointer-events:none，
+   让 elementFromPoint 能穿透命中下方文件夹。 */
+
+function TopSortableRow({
+  id,
+  data,
+  children
+}: {
+  id: string;
+  data: DragData;
+  children: (api: { isDragging: boolean }) => React.ReactNode;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id, data });
+  return (
+    <m.div
+      ref={setNodeRef}
+      className={`${styles.listItemWrapper}${isDragging ? ` ${styles.listItemWrapperDragging}` : ""}`}
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } }}
+      transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
+      {...listeners}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+    >
+      {children({ isDragging })}
+    </m.div>
+  );
+}
+
+function ChildSortableRow({
+  id,
+  data,
+  motionProps,
+  children
+}: {
+  id: string;
+  data: DragData;
+  motionProps: { onMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void; onMouseLeave?: () => void };
+  children: (api: { isDragging: boolean }) => React.ReactNode;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id, data });
+  return (
+    <m.div
+      ref={setNodeRef}
+      className={`${styles.listItemWrapper}${isDragging ? ` ${styles.listItemWrapperDragging}` : ""}`}
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } }}
+      transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
+      {...motionProps}
+      {...listeners}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+    >
+      {children({ isDragging })}
+    </m.div>
+  );
+}
+
+function FolderSortable({
+  folderId,
+  expanded,
+  dragOver,
+  childDragging,
+  onHeaderClick,
+  onHeaderContextMenu,
+  clearHoverHighlight,
+  header,
+  children
+}: {
+  folderId: string;
+  expanded: boolean;
+  dragOver: boolean;
+  childDragging?: boolean;
+  onHeaderClick: () => void;
+  onHeaderContextMenu: (e: React.MouseEvent) => void;
+  clearHoverHighlight: () => void;
+  header: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, setActivatorNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: `f:${folderId}`,
+    data: { kind: "top-folder", folderId }
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      data-folder-id={folderId}
+      className={`${styles.folderItem}${expanded ? ` ${styles.folderItemExpanded}` : ""}${dragOver ? ` ${styles.folderItemDragOver}` : ""}${isDragging ? ` ${styles.folderItemDragging}` : ""}${childDragging ? ` ${styles.folderItemChildDragging}` : ""}`}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      onMouseEnter={clearHoverHighlight}
+    >
+      <div
+        className={styles.folderHeader}
+        ref={setActivatorNodeRef}
+        {...listeners}
+        role="button"
+        tabIndex={0}
+        onClick={onHeaderClick}
+        onContextMenu={onHeaderContextMenu}
+      >
+        {header}
+      </div>
+      {children}
+    </div>
   );
 }

@@ -226,6 +226,11 @@
   z-index: 1;
 }
 
+/* 拖拽中的行：穿透指针，让 elementFromPoint 能命中下方文件夹/条目 */
+.listItemWrapperDragging {
+  pointer-events: none;
+}
+
 /* 行内边距 5：行距 44+2×5+列表 gap 2 = 56px，与折叠迷你条头像节奏一致
    （44+12=56），切换时各行头像零位移 */
 .streamerItem {
@@ -251,6 +256,17 @@
 .streamerItemInFolder {
   padding: 4px 6px;
   border-radius: 10px;
+}
+
+/* 拖拽中的源行：跟随鼠标浮起（y 由 JS motion value 驱动），原槽位留空作占位。
+   pointer-events 必须放行穿透：elementFromPoint 靠命中下方元素检测目标文件夹 */
+.streamerItemDragging {
+  position: relative;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--color-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: 12px;
 }
 
 .avatarWrap {
@@ -433,20 +449,6 @@
   background: #64748b;
 }
 
-.itemActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0;
-  transform: translateX(6px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.streamerItem:hover .itemActions {
-  opacity: 1;
-  transform: translateX(0);
-}
-
 .miniBtn {
   width: 26px;
   height: 26px;
@@ -502,6 +504,17 @@
     0 0 0 2px rgba(255, 255, 255, 0.55),
     0 0 16px rgba(255, 255, 255, 0.45),
     0 0 28px rgba(255, 255, 255, 0.3);
+}
+
+.folderItemDragging {
+  opacity: 0.5;
+}
+
+/* 源文件夹的子行被拖出时：放开两级裁剪让头像能拖出卡片，并抬高整个文件夹，
+   保证拖出的头像盖在其它顶层条目/文件夹上方 */
+.folderItemChildDragging {
+  overflow: visible;
+  z-index: 30;
 }
 
 .folderHeader {
