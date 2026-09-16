@@ -4,6 +4,9 @@
 
 ## 功能待办
 
+[] 修复问题：关注栏中已经在文件夹中的主播没有办法移动到另一个文件夹
+[] 优化关注栏的拖动效果
+
 ### 1. 多屏直播（同屏播多个房间）— 开发中 (feat/multiview-layouts)
 - 同一窗口内同时播放多个直播房间（网格/分屏布局）。
 - 布局方案已定，详见 [docs/multiview-layouts.md](docs/multiview-layouts.md)（6 档：双屏 / 竖双屏 / 竖三屏 / 四宫格 / 主副 1+3 / 竖四屏；上限 4 路；不做 6/9 宫格、不做自动转置）。
@@ -98,3 +101,10 @@
 - 2026-08-23 refactor(follows) 关注刷新引擎抽为应用级 `FollowRefreshProvider`（挂常驻外壳不随侧栏折叠/路由卸载；定时器自校正调度防漂移；开播通知与刷新过程补运行日志）
 - 2026-08-24 feat(player) 独立直播间窗口（单屏播放器「独立窗口」按钮 → Rust `open_player_window_cmd` 每房间单例无边框沉浸窗（decorations=false，拖拽/最小化/最大化/关闭由播放器页内 UI 承担）；`/player-window/` 路由无外壳渲染，Providers 挂 Follow/PlayerUi/Multiview/VolumeToast 子集；OS 级关闭经 CloseRequested 拦截 → emit `dtv_player_window_close` → 前端清理后自销毁 + 3s 兜底强关；弹幕按房间精准 stop、FLV 代理每窗口独立 session（B 站命令新增 session 参数），多窗口互不顶掉；capabilities 加 `player-*`）
 - 2026-08-24 fix(follows) 开播通知收敛为仅定时轮次触发（启动首轮/回前台补刷/手动刷新只吸收检测基线，`notify = reason === "timer"`）
+- 2026-09-16 fix(search) 搜索结果开播状态取反修复（斗鱼 searchUser `isLive` 实测 1=直播中、2=未开播，原代码判 `=== 2` 恰好取反；顺带移除实测无效的 isLoop/videoLoop 排除）
+- 2026-09-16 feat(search) 搜索结果开播状态改图标徽标（复用关注栏 `AvatarLiveBadge`，新增 compact 变体适配 30px 小头像；清理 Navbar 死样式 liveDot/liveDotOn）
+- 2026-09-16 feat(multiview) 多屏工具条新增「沉浸模式」切换（置顶按钮旁）：经 playerUi fullscreen 走 AppShell 现有沉浸链路，隐藏 Navbar 与 mini 关注栏（左缘热区悬停唤出），Esc/再点退出，退出多屏自动复位
+- 2026-09-16 fix(player-window) 独立直播间窗口白边直角改 R 角（macOS 透明窗 + 页面根容器自画 10px 圆角背景，body 背景让位；Windows/Linux 不动）
+- 2026-09-16 fix(player) 镜像翻转换台后重置回正常（MainPlayer 与多屏 PlayerCell 均在 platform/roomId 变化 effect 里复位）
+- 2026-09-16 feat(player) 镜像按钮两态改图形区分（自造「外高内矮竖边梯形对+中缝虚线」图标：描边=关、实心=开，实心墨量大、18px 下形态差异比 lucide/tabler 三角形方案明显；无颜色高亮）
+- 2026-09-16 feat(player) 弹幕开关改「弹」字徽标（B 站式 HTML/CSS：圆角方框 + flex 居中弹字，关态 CSS 渐变对角斜杠；SVG text 基线 Chromium/WebKit 漂移 ~1 格故用 flex 居中；对比过 lucide/tabler 七个候选后用户定稿自造）
