@@ -40,15 +40,12 @@ type FollowContextValue = {
   isFollowed: (platform: Platform, id: string) => boolean;
   followStreamer: (streamer: FollowedStreamer) => void;
   unfollowStreamer: (platform: Platform, id: string) => void;
-  updateOrder: (nextOrder: FollowListItem[]) => void;
   updateListOrder: (nextOrder: FollowListItem[]) => void;
   createFolder: (name: string) => void;
   renameFolder: (folderId: string, name: string) => void;
   deleteFolder: (folderId: string) => void;
   toggleFolderExpanded: (folderId: string) => void;
   moveStreamerToFolder: (streamerKey: string, folderId: string) => void;
-  addStreamerToFolder: (folderId: string, platform: Platform, id: string) => void;
-  removeStreamerFromFolder: (folderId: string, platform: Platform, id: string) => void;
   removeStreamerFromFolderByKey: (streamerKey: string, folderId: string) => void;
   updateStreamer: (platform: Platform, id: string, patch: Partial<FollowedStreamer>) => void;
 };
@@ -277,7 +274,6 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
           )
         );
       },
-      updateOrder: (nextOrder) => setListOrder(normalizeListOrder(nextOrder)),
       updateListOrder: (nextOrder) => setListOrder(normalizeListOrder(nextOrder)),
 
       createFolder: (name) => {
@@ -341,47 +337,6 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
               if (!nextIds.some((id) => normalizeStreamerKey(id).key === norm.key)) nextIds.push(norm.key);
               return { ...item, data: { ...item.data, streamerIds: nextIds, expanded: true } };
             });
-
-          return normalizeListOrder(next);
-        });
-      },
-      addStreamerToFolder: (folderId, platform, id) => {
-        const key = `${platform}:${id}`;
-        setListOrder((prev) => {
-          const next = prev
-            .map((item) => {
-              if (item.type === "folder" && item.data.id === folderId) {
-                if (item.data.streamerIds.includes(key)) return item;
-                return { ...item, data: { ...item.data, streamerIds: [...item.data.streamerIds, key], expanded: true } };
-              }
-              return item;
-            })
-            .filter((item) => !(item.type === "streamer" && `${item.data.platform}:${item.data.id}` === key));
-          return normalizeListOrder(next);
-        });
-      },
-      removeStreamerFromFolder: (folderId, platform, id) => {
-        const key = `${platform}:${id}`;
-        const norm = normalizeStreamerKey(key);
-        if (!norm.platform || !norm.id) return;
-
-        setListOrder((prev) => {
-          const folderIndex = prev.findIndex((x) => x.type === "folder" && x.data.id === folderId);
-          if (folderIndex < 0) return prev;
-
-          const streamer = followedStreamers.find((s) => normalizeStreamerKey(`${s.platform}:${s.id}`).key === norm.key);
-          const existsInTop = prev.some((x) => x.type === "streamer" && normalizeStreamerKey(`${x.data.platform}:${x.data.id}`).key === norm.key);
-
-          const next = prev.map((item) => {
-            if (item.type !== "folder" || item.data.id !== folderId) return item;
-            const nextIds = item.data.streamerIds.filter((x) => normalizeStreamerKey(x).key !== norm.key);
-            return nextIds.length === item.data.streamerIds.length ? item : { ...item, data: { ...item.data, streamerIds: nextIds } };
-          });
-
-          if (!existsInTop && streamer) {
-            const insertAt = Math.min(folderIndex + 1, next.length);
-            next.splice(insertAt, 0, { type: "streamer" as const, data: streamer });
-          }
 
           return normalizeListOrder(next);
         });

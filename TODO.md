@@ -4,8 +4,7 @@
 
 ## 功能待办
 
-[] 修复问题：关注栏中已经在文件夹中的主播没有办法移动到另一个文件夹
-[] 优化关注栏的拖动效果
+（暂无）
 
 ### 1. 多屏直播（同屏播多个房间）— 开发中 (feat/multiview-layouts)
 - 同一窗口内同时播放多个直播房间（网格/分屏布局）。
@@ -108,3 +107,6 @@
 - 2026-09-16 fix(player) 镜像翻转换台后重置回正常（MainPlayer 与多屏 PlayerCell 均在 platform/roomId 变化 effect 里复位）
 - 2026-09-16 feat(player) 镜像按钮两态改图形区分（自造「外高内矮竖边梯形对+中缝虚线」图标：描边=关、实心=开，实心墨量大、18px 下形态差异比 lucide/tabler 三角形方案明显；无颜色高亮）
 - 2026-09-16 feat(player) 弹幕开关改「弹」字徽标（B 站式 HTML/CSS：圆角方框 + flex 居中弹字，关态 CSS 渐变对角斜杠；SVG text 基线 Chromium/WebKit 漂移 ~1 格故用 flex 居中；对比过 lucide/tabler 七个候选后用户定稿自造）
+- 2026-09-16 fix(follows) 文件夹内主播可拖入其他文件夹/拖出回顶层（根因：文件夹容器 onMouseDown 冒泡覆盖子行拖拽 payload，实际拖的是文件夹；子行 stopPropagation 修复）
+- 2026-09-16 refactor(follows) 关注栏拖拽迁移 dnd-kit（@dnd-kit/core+sortable 替代全部手写拖拽：PointerSensor 8px 激活、顶层同 Kind 实时重排（文件夹/主播互不越界）、子行 useSortable 在同文件夹内排序、文件夹投递保留 elementFromPoint 悬停检测 + 源文件夹内松手回弹归位；事务 begin/commit/rollback 映射 onDragStart/End/Cancel；删净手写锚点/弹簧补偿/节流，过冲类 bug 由库消灭）
+- 2026-09-16 feat(follows) 拖拽行跟手浮起（dnd-kit transform 跟随指针、兄弟实时让位；浮起态 pointer-events:none 保证文件夹命中检测；拖出文件夹时放开文件夹两级 overflow 裁剪并抬高层级，头像跟手悬浮列表其它内容上方）

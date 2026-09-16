@@ -280,7 +280,7 @@ export function MultiViewGrid() {
         </button>
         <button
           type="button"
-          className={`mv-icon-btn ${isFullscreen ? " is-active" : ""}`}
+          className={`mv-icon-btn${isFullscreen ? " is-active" : ""}`}
           title={isFullscreen ? "退出沉浸模式" : "沉浸模式（隐藏侧栏与导航）"}
           aria-label={isFullscreen ? "退出沉浸模式" : "沉浸模式"}
           aria-pressed={isFullscreen}

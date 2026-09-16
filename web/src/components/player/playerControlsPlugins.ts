@@ -200,7 +200,7 @@ export class MirrorFlipControl extends Plugin {
     if (!root) {
       return;
     }
-    // 图标形态区分开/关（描边梯形 / 实心梯形），颜色高亮仅作辅助
+    // 图标形态区分开/关：描边梯形=关、实心梯形=开，无颜色高亮
     root.innerHTML = this.isActive ? ICONS.mirrorFlipFilled : ICONS.mirrorFlip;
     root.classList.toggle('is-active', this.isActive);
     root.setAttribute('aria-pressed', this.isActive ? 'true' : 'false');
