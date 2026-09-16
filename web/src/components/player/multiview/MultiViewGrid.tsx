@@ -29,7 +29,7 @@ function toPlatformEnum(p: string): Platform {
 
 export function MultiViewGrid() {
   const multiview = useMultiview();
-  const { isAlwaysOnTop, toggleAlwaysOnTop } = usePlayerUi();
+  const { isAlwaysOnTop, toggleAlwaysOnTop, isFullscreen, setFullscreen } = usePlayerUi();
 
   const layoutId = multiview.layoutId;
   const slots = multiview.slots;
@@ -199,11 +199,20 @@ export function MultiViewGrid() {
       if (e.key !== "Escape") return;
       if (zoomedSlot !== null) {
         multiview.toggleZoom(zoomedSlot);
+      } else if (isFullscreen) {
+        setFullscreen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [multiview, zoomedSlot]);
+  }, [isFullscreen, multiview, setFullscreen, zoomedSlot]);
+
+  // 沉浸态（网页全屏）经 playerUi 上报 AppShell：隐藏 Navbar + 侧栏滑出仅剩左缘热区；
+  // 退出多屏/卸载时复位，避免沉浸状态泄漏回单屏或首页
+  useEffect(() => {
+    if (!isFullscreen) return;
+    return () => setFullscreen(false);
+  }, [isFullscreen, setFullscreen]);
 
   // ── 关注栏拖入（HTML5 DnD：FollowsList 侧后续接入 dataTransfer） ──
   const onGridDragOver = useCallback((e: React.DragEvent) => {
@@ -268,6 +277,30 @@ export function MultiViewGrid() {
           onClick={toggleAlwaysOnTop}
         >
           <PinIcon filled={isAlwaysOnTop} />
+        </button>
+        <button
+          type="button"
+          className={`mv-icon-btn ${isFullscreen ? " is-active" : ""}`}
+          title={isFullscreen ? "退出沉浸模式" : "沉浸模式（隐藏侧栏与导航）"}
+          aria-label={isFullscreen ? "退出沉浸模式" : "沉浸模式"}
+          aria-pressed={isFullscreen}
+          onClick={() => setFullscreen(!isFullscreen)}
+        >
+          {isFullscreen ? (
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+              <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+              <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+              <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          )}
         </button>
         <button type="button" className="mv-exit-btn" onClick={() => multiview.exit()} title="退出多屏模式" aria-label="退出多屏模式">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
