@@ -318,12 +318,16 @@ async fn open_player_window_cmd(
     }
 
     let url = format!("player-window/?platform={platform}&roomId={}", urlencode(&room_id));
-    let built = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+    let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
         .title(format!("直播间 {room_id}"))
         .inner_size(1104.0, 660.0)
         .min_inner_size(640.0, 400.0)
-        .decorations(false)
-        .build();
+        .decorations(false);
+    // macOS：透明窗 + 页面根容器自画圆角背景（无边框窗默认直角白边）；
+    // 系统投影按不透明内容计算，圆角外的透明区无阴影，观感与原生圆角窗一致
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true);
+    let built = builder.build();
     match built {
         Ok(_) => Ok(()),
         // 并发创建同一 label：第二个失败时前置已建窗口即可

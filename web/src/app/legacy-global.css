@@ -206,6 +206,12 @@ body {
   overflow: hidden;
 }
 
+/* 独立直播间窗口（macOS 透明窗）：body 背景让位给页面根容器自画的圆角背景，
+   否则 body 的 --bg-primary 会铺满整个直角窗、盖掉圆角 */
+body.frameless-rounded-window {
+  background: transparent;
+}
+
 :where(button, input, textarea, select) {
   font: inherit;
   color: inherit;
