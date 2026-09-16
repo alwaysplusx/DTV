@@ -835,6 +835,8 @@ export function PlayerCell({
 
   useEffect(() => {
     disposedRef.current = false;
+    // 镜像翻转不跨房间保留：换台即回正常画面
+    setIsMirrorFlipped(false);
     void reloadStream("refresh");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform, roomId]);

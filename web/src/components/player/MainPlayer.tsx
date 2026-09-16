@@ -1538,6 +1538,8 @@ export function MainPlayer({
     // 多屏模式由 MultiViewGrid 自管各格播放器，单实例 reload 不能触碰后端 / 代理
     if (isMultiview) return;
     disposedRef.current = false;
+    // 镜像翻转不跨房间保留：换台即回正常画面
+    setIsMirrorFlipped(false);
     void reloadStream("refresh");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform, roomId, isMultiview]);
