@@ -56,9 +56,8 @@ function parseDouyuSearch(raw: string): SearchAnchorResult[] {
         const avatar = safeString(anchorInfo?.avatar ?? anchorInfo?.avatar_url ?? anchorInfo?.avatarUrl);
 
         const isLive = Number(anchorInfo?.isLive ?? anchorInfo?.is_live ?? NaN);
-        const isLoop = Number(anchorInfo?.isLoop ?? anchorInfo?.is_loop ?? NaN);
-        const videoLoop = Number(anchorInfo?.videoLoop ?? anchorInfo?.video_loop ?? NaN);
-        const liveStatus = isLive === 2 && isLoop !== 1 && videoLoop !== 1;
+        // 斗鱼 searchUser 的 anchorInfo.isLive：1=直播中，2=未开播（实测 2026-09：今日在播均 1，下播数日均 2）
+        const liveStatus = isLive === 1;
 
         if (!roomId || !userName) return null;
         return {
