@@ -403,64 +403,42 @@
   display: none;
 }
 
-.xgplayer-danmu-toggle .danmu-toggle-label {
+/* 弹幕开关徽标：圆角方框 + flex 居中「弹」，开/关只靠形态（有无对角斜杠）区分 */
+.xgplayer-danmu-toggle .danmu-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.xgplayer-danmu-toggle .danmu-badge-char {
+  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.03em;
+  line-height: 1;
+  /* 小字号基线取整使字形偏左下（实机 2x 实测 +0.5pt 下 / -0.25pt 左），subpixel 平移补偿；
+     设备像素取整分辨率 ±0.25pt，水平档位取完全抵消左偏的一档 */
+  transform: translate(0.25px, -0.5px);
 }
 
-.xgplayer-danmu-toggle {
-  gap: 10px;
-  padding: 0;
-  border-radius: 999px;
-  background: transparent;
-  border: none;
-  transition: color 0.2s ease;
-}
-
-.xgplayer-danmu-toggle:hover {
-  color: #ffffff;
+/* 关态：对角斜杠（\），略溢出框角；渐变硬边画线避免旋转元素的锯齿 */
+.xgplayer-danmu-toggle.is-off .danmu-badge::after {
+  content: '';
+  position: absolute;
+  inset: -2.5px;
+  background: linear-gradient(to top right,
+    transparent calc(50% - 0.75px),
+    currentColor calc(50% - 0.75px),
+    currentColor calc(50% + 0.75px),
+    transparent calc(50% + 0.75px));
 }
 
 .xgplayer-danmu-toggle.is-off {
   opacity: 0.85;
-}
-
-.xgplayer-danmu-toggle .danmu-toggle-switch {
-  position: relative;
-  width: 30px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-}
-
-.xgplayer-danmu-toggle .danmu-toggle-switch .switch-track {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  transition: background 0.2s ease;
-}
-
-.xgplayer-danmu-toggle .danmu-toggle-switch .switch-thumb {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
-  transform: translateX(1px);
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease, box-shadow 0.2s ease;
-}
-
-.xgplayer-danmu-toggle:not(.is-off) .danmu-toggle-switch .switch-track {
-  background: var(--player-accent-gradient);
-}
-
-.xgplayer-danmu-toggle:not(.is-off) .danmu-toggle-switch .switch-thumb {
-  transform: translateX(15px);
-  background: #1a1a1a;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
 }
 
 .xgplayer-volume-control {
@@ -2534,14 +2512,7 @@ video.xgplayer-video {
   border-bottom: 1px solid var(--border-color-light, #e0e0e0);
 }
 
-/* Mirror flip */
-.xgplayer-mirror-flip.is-active {
-  color: #0a84ff;
-}
-
-.xgplayer-mirror-flip.is-active:hover {
-  color: #3d9fff;
-}
+/* Mirror flip：开/关只靠图标形态（描边/实心）区分，无颜色高亮 */
 
 .video-container.is-mirror-flipped video {
   transform: scaleX(-1);

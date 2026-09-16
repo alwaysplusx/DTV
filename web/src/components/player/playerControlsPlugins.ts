@@ -182,7 +182,7 @@ export class MirrorFlipControl extends Plugin {
       return '';
     }
     return `<xg-icon class="xgplayer-mirror-flip" title="镜像翻转" role="button" aria-pressed="${this.isActive}">
-      ${ICONS.flipHorizontal}
+      ${ICONS.mirrorFlip}
     </xg-icon>`;
   }
 
@@ -200,6 +200,8 @@ export class MirrorFlipControl extends Plugin {
     if (!root) {
       return;
     }
+    // 图标形态区分开/关（描边梯形 / 实心梯形），颜色高亮仅作辅助
+    root.innerHTML = this.isActive ? ICONS.mirrorFlipFilled : ICONS.mirrorFlip;
     root.classList.toggle('is-active', this.isActive);
     root.setAttribute('aria-pressed', this.isActive ? 'true' : 'false');
   }

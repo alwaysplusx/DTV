@@ -48,12 +48,10 @@ export class DanmuToggleControl extends Plugin {
     if (this.config.disable) {
       return '';
     }
-    return `<xg-icon class="xgplayer-danmu-toggle" title="" role="button" aria-pressed="${this.isActive}">
-      <span class="danmu-toggle-label">弹幕</span>
-      <span class="danmu-toggle-switch">
-        <span class="switch-track"></span>
-        <span class="switch-thumb"></span>
-      </span>
+    // 徽标形态：圆角方框 + flex 居中「弹」；关态斜杠由 .is-off 的 CSS 渐变叠加。
+    // 不用 SVG <text>：基线排版 Chromium/WebKit 漂移约 1 格（18px 下可见），flex 居中跨引擎确定
+    return `<xg-icon class="xgplayer-danmu-toggle" title="弹幕开关" role="button" aria-pressed="${this.isActive}">
+      <span class="danmu-badge"><span class="danmu-badge-char">弹</span></span>
     </xg-icon>`;
   }
 
